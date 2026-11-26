@@ -525,7 +525,7 @@ boardBandTest: boardBandTest.c $(ROOT)/hal/board.h
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ boardBandTest.c
 
 run: run-core
-run-core: radioCoreTest radioCoreTestNoVfoDmr radioCoreTestModemVoice radioCoreTestP25 radioCoreTestP25T radioCoreTestNxdn radioCoreTestP25Nxdn radioCoreTestAprs radioCoreTestAprsDmr radioFeaturesTest radioFeaturesTestNoDual roamTest radioListenBandsTest inputTest switchFollowTest aprsRadioTest quadratureTest serialmicTest anytoneMicTest btAtTest miclevelTest resampleTest \
+run-core: radioCoreTest radioCoreTestNoVfoDmr radioCoreTestModemVoice radioCoreTestP25 radioCoreTestP25T radioCoreTestNxdn radioCoreTestNxdnModemVoice radioCoreTestP25Nxdn radioCoreTestAprs radioCoreTestAprsDmr radioFeaturesTest radioFeaturesTestNoDual roamTest radioListenBandsTest inputTest switchFollowTest aprsRadioTest quadratureTest serialmicTest anytoneMicTest btAtTest miclevelTest resampleTest \
           adcPcmTest rx2LinkTest keyassignTest powerSwitchTest powerKeyTest boardBandTest batteryTest
 	./aprsRadioTest
 	./radioCoreTest
@@ -533,6 +533,7 @@ run-core: radioCoreTest radioCoreTestNoVfoDmr radioCoreTestModemVoice radioCoreT
 	./radioCoreTestModemVoice
 	./radioCoreTestP25
 	./radioCoreTestNxdn
+	./radioCoreTestNxdnModemVoice
 	./radioCoreTestP25Nxdn
 	./radioCoreTestP25T
 	./radioCoreTestAprs
