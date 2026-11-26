@@ -639,6 +639,7 @@ void hotspot_get_view(hotspot_view_t *v)
 uint32_t input_raw_keys(void) { return 0; }
 int32_t input_encoder_total(void) { return 0; }
 uint32_t input_ptt_downs(void) { return 0; }
+bool input_hand_mic_stats(hal_hand_mic_stats_t *st) { (void)st; return false; }	// no keypad microphone (ki9ng fork)
 void ui_crit_enter(void) {}
 void ui_crit_exit(void) {}
 

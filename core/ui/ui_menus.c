@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
+// Copyright (c) 2026 KI9NG
 // The list screens and the screen table (information-architecture.md 4, 6, 8): the Hub with its six destinations,
 // actions on a station, Contacts, Messages, Recent, Channels, Tools, Settings grouped by intent, the talk target
 // picker, information pages and the one confirmation (factory reset, P7).
 #include <stddef.h>
 #include <string.h>
 #include "board.h"
+#include "input/input.h"
 #include "ui_nav.h"
 #include "ui_svc.h"
 #include "ui_svc_aprs.h"
@@ -2097,6 +2099,17 @@ uint8_t ui_menus_zones_moved(ui_frame_t *stack, uint8_t sp, uint32_t from, uint3
 
 #if CONFIG_CHANNEL_EDIT || CONFIG_APRS_AFSK || CONFIG_DMR_SMS || CONFIG_SATELLITE_TLE
 // ======================= Text entry: keypad letters (ui.md 2.1) =======================
+
+// A keypad to type with: the radio's own, or a keypad microphone that is answering (ki9ng fork: the AT-D578UV has no
+// keypad of its own, and none of its keys gives a long OK, so without this a name could never be kept)
+static bool text_keypad(void)
+{
+	if (board.caps & CAP_KEYPAD) {
+		return true;
+	}
+	hal_hand_mic_stats_t hm;
+	return input_hand_mic_stats(&hm) && hm.present;
+}
 // Phone keypad: in ABC / abc, 2-9 cycle their letters, the digit, then the letters in the other case (ABC: A B C 2 a b
 // c); 1 cycles punctuation and 0 a space, 0 and a few signs. The same key within 1 s takes the next one, another key
 // or the pause moves on. In 123 a digit types itself, as a held digit does
@@ -2370,7 +2383,7 @@ static bool text_key_fn(const input_event_t *ev)
 		return true;
 	}
 	if (ev->action == ACT_SELECT && press) {
-		if (!(board.caps & CAP_KEYPAD) && ev->gesture == GESTURE_PRESS) {
+		if (!text_keypad() && ev->gesture == GESTURE_PRESS) {
 			text_append(text_len > 0 ? text_buf[text_len - 1] : 'A');	// the next character, started as this one
 		} else {
 			if (text_target != text_buf)
