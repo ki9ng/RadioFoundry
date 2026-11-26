@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 The RadioFoundry Authors
+# Copyright (c) 2026 KI9NG
 # AnyTone AT-D578UV (mobile), Artery builds (from mid-2022): AT32F435 + SCT3258 DMR baseband + four QA4818N RF
 # chips (BK4819-class) + ST7735S 160x128 on an 8080 bus. The wiring is the GD32F303
 # builds', so the radio's code is boards/d578uv's, built here on the AT32F43x platform; this directory holds what
@@ -18,6 +19,8 @@ MCU_DEFS   += $(D578UV_DEFS)
 # releases PTT and polls the DMR call into its data receive) is 3184 bytes, the host task's (a debug link command)
 # 2784, the UI's (a message row's contact name) 1824 and the start task's (the first zone's channel at boot) 2328.
 # With make stack-check's overhead and margin that's 882, 782, 540 and 668 words, 0 to 8 bytes to spare
+# The RF chips' 3-wire bus at the 1 us timing (boards/d578uv/radio_d578uv.c, D578UV_BUS_FAST; ki9ng fork)
+MCU_DEFS   += -DD578UV_BUS_FAST=0
 MCU_DEFS   += -DRADIO_TASK_STACK=882 -DHOSTLINK_TASK_STACK=782 -DUI_TASK_STACK_WORDS=540 -DSTART_TASK_STACK=668
 BOARD_DIRS := boards/d578uva boards/d578uv drivers/display/st7735 drivers/flash/spi_nand drivers/input/quadrature \
               drivers/modem/sct drivers/rf/rfbus drivers/rf/subaudio drivers/rf/qa4818 drivers/gps/nmea_line \

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
+// Copyright (c) 2026 KI9NG
 // AT-D578UV keys and encoder. The front keys sit on two resistor ladders read by the
 // ADC, four keys each, with these windows (at or below 500, 1500, 2500 and 3500 counts; above: none); one key has a pin
 // of its own (PA1), low when pressed. The encoder's lines are PC8 and PC9, sampled on every edge of either (EXTI 8 and
@@ -137,7 +138,7 @@ static void init(void)
 	mcu_pin_analog(PIN_KEY_LADDER1);
 	mcu_pin_in(PIN_KEY_SINGLE, MCU_PULL_UP);
 	mcu_pin_in(PIN_MIC_LINE9, MCU_PULL_UP);
-	mcu_pin_in(PIN_MIC_LINE10, MCU_PULL_UP);
+	mcu_pin_uart_rx(PIN_MIC_LINE10, MIC_TX_AF, MCU_PULL_UP);	// USART1 RX (AT32: MUX mode; the GPIO read below still works)
 	mcu_pin_in(PIN_ENC_A, MCU_PULL_UP);
 	mcu_pin_in(PIN_ENC_B, MCU_PULL_UP);
 	anytone_mic_init(&mic);

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
+// Copyright (c) 2026 KI9NG
 // AT-D578UV radio: the four QA4818-class chips as two superhets, side A (receive and transmit) and side B (receive
 // only, the second receiver), analog FM and DMR.
 //
@@ -356,8 +357,15 @@ static void bus_unlock(uint32_t saved)
 
 // Fast (rfbus.h): the QA4818s are BK4819-class, and with the 1 us waits per half bit a register write took 124 us and
 // the receive set-up after a DMR transmission 8 ms of a 30 ms window (a reply's next frame)
+// ki9ng fork: on the AT32 the fast timing garbled the bus (first AT32 boot, 2026-11-26: page 0 0x30 read 0xFFFF on all
+// four chips, RSSI raw 0, no receive). Its GPIO sits on the AHB, so bare pin writes give half bits of a few cycles and
+// the read samples SDIO right after the rising edge. D578UV_BUS_FAST=0 (boards/d578uva/board.mk) takes the 1 us
+// half bits until a faster timing is measured
+#ifndef D578UV_BUS_FAST
+#define D578UV_BUS_FAST		1
+#endif
 #define BUS_PINS(cs) { cs, bus_clk, bus_data_out, bus_data_release, bus_data_in, hal_delay_us, bus_lock, bus_unlock, \
-		       hal_delay_ms, true }
+		       hal_delay_ms, D578UV_BUS_FAST }
 static const rfbus_3w_pins_t pins_chip[4] = { BUS_PINS(cs0), BUS_PINS(cs1), BUS_PINS(cs2), BUS_PINS(cs3) };
 
 // The PA5 device: 4-bit address then 8 data bits, MSB first, data set while the clock is low
