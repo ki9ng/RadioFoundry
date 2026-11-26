@@ -27,6 +27,9 @@ typedef struct {
 	uint8_t page;		// the page page() selected last (the register tables end on page 0)
 	bool v2;		// the newer chip in this socket (qa4818_v2.c, ki9ng fork): its own map and address format
 	bool v2_51;		// ... its 0x51 read 3 at init (the vendor's 0x47 and side B IF choice)
+	bool v2_side_b;		// ... a transceiver: side B's (chip 1)
+	bool v2_wide;		// ... the channel width the last path set-up took (qa4818_path)
+	uint16_t v2_r19;	// ... chip 0's 0x19 shadow (analog / digital bits)
 } qa4818_t;
 
 // Registers with a known use

@@ -9,7 +9,7 @@
 void qa4818_v2_tune(qa4818_t *c, uint32_t hz);
 void qa4818_v2_init_lo(qa4818_t *c, bool trx_v2);
 void qa4818_v2_init_trx(qa4818_t *c, bool side_b);
-void qa4818_v2_path(qa4818_t *c, bool tx);
+void qa4818_v2_path(qa4818_t *c, bool digital);
 void qa4818_v2_rx_on(qa4818_t *c, uint32_t hz);
 void qa4818_v2_lo_on(qa4818_t *c);
 void qa4818_v2_off(qa4818_t *c);
@@ -18,5 +18,13 @@ void qa4818_v2_rx_setup(qa4818_t *c, bool digital);
 void qa4818_v2_gpio(qa4818_t *c, uint16_t old, uint16_t now, bool all);
 uint16_t qa4818_v2_reg(qa4818_t *c, uint8_t reg, uint16_t val, bool write);
 void qa4818_v2_status(qa4818_t *c, qa4818_status_t *st);
+// FM transmit
+void qa4818_v2_fm_tx(qa4818_t *c, uint32_t hz);
+void qa4818_v2_mic(qa4818_t *c, uint8_t idx);
+void qa4818_v2_no_tone(qa4818_t *c);
+void qa4818_v2_tone_off(qa4818_t *c);
+void qa4818_v2_drive(qa4818_t *c, uint16_t drive, uint16_t level);
+void qa4818_v2_drive_off(qa4818_t *c);
+void qa4818_v2_tx_on(qa4818_t *c);
 
 #endif

@@ -7,8 +7,8 @@
 //   - its own register program for every operation: enable 0x56, output stage 0x5C, GPIO one pin per 0x52 write,
 //     frequency in Hz in 0x69 (high) / 0x68 (low), status 0x0E, RSSI 0x02
 // The values here are the vendor firmware's for this chip (static analysis of AT 2.08, KI9NG 2026-11-26; fork only:
-// docs/CLEANROOM.md keeps it out of RadioFoundry upstream). Receive is ported; transmit, sub-audio, beeps and the
-// AF selector are not yet, and their entry points leave the chip alone.
+// docs/CLEANROOM.md keeps it out of RadioFoundry upstream). Receive and plain FM transmit are ported; sub-audio,
+// beeps, the AF selector, DMR and the receive gain are not yet, and their entry points leave the chip alone.
 #include "qa4818.h"
 #include "qa4818_v2.h"
 
@@ -143,9 +143,14 @@ static void coef_1c(qa4818_t *c)
 	wr(c, 0x1F, 0x3F54);
 }
 
-void qa4818_v2_path(qa4818_t *c, bool tx)
+// The receive and transmit path for an analog or a digital channel (the vendor's, around the QA4818's 0x44 / 0x4B / 0x73
+// / 0x7E set-up): the 0x53 ramp, the path block, 0x2A, and on side A chip 0x19's analog / digital bits
+static const uint16_t ramp53_trx_path[] = { 0x773F, 0x673F, 0x56FF, 0x46BE, 0x34BC, 0x247B, 0x1279, 0x0076 };
+void qa4818_v2_path(qa4818_t *c, bool digital)
 {
-	if (!tx) {
+	wr_list(c, 0x53, ramp53_trx_path, sizeof(ramp53_trx_path) / sizeof(ramp53_trx_path[0]));
+	wr(c, 0x43, 0x1A40);
+	if (!digital) {
 		wr(c, 0x11, 0x041A);
 		wr(c, 0x2B, 0x708D);
 		wr(c, 0x53, 0x773F);
@@ -158,6 +163,7 @@ void qa4818_v2_path(qa4818_t *c, bool tx)
 		wr(c, 0x32, 0x22A2);
 		coef_20(c);
 		coef_1c(c);
+		wr(c, 0x2A, 0x1081);
 	} else {
 		wr(c, 0x2B, 0x708D);
 		wr(c, 0x18, 0x026E);
@@ -166,11 +172,18 @@ void qa4818_v2_path(qa4818_t *c, bool tx)
 		wr(c, 0x26, 0x6068);
 		wr(c, 0x32, 0x0622);
 		wr(c, 0x53, 0x773F);
+		wr(c, 0x2A, 0x108C);
+	}
+	if (!c->v2_side_b) {
+		c->v2_r19 = digital ? (uint16_t)(c->v2_r19 | 0x0024u) : (uint16_t)(c->v2_r19 & ~0x0024u);
+		wr(c, 0x19, c->v2_r19);
 	}
 }
 
 void qa4818_v2_init_trx(qa4818_t *c, bool side_b)
 {
+	c->v2_side_b = side_b;
+	c->v2_r19 = 0x0381;
 	wr(c, 0x50, 0x0001);
 	wr(c, 0x58, 0xF1F0);
 	wr_list(c, 0x40, ramp40_lo, sizeof(ramp40_lo) / sizeof(ramp40_lo[0]));
@@ -198,6 +211,7 @@ void qa4818_v2_init_trx(qa4818_t *c, bool side_b)
 	wr(c, 0x30, 0x5F6B);
 	qa4818_v2_path(c, false);
 	wr(c, 0x19, 0x0381);
+	c->v2_r19 = 0x0381;
 	wr(c, 0x48, 0x9826);
 	wr(c, 0x49, 0x704F);
 	wr(c, 0x43, 0x1A40);
@@ -272,4 +286,66 @@ void qa4818_v2_status(qa4818_t *c, qa4818_status_t *st)
 	st->rssi = (uint16_t)((rd(c, 0x02) & 0x3FFu) >> 2);
 	st->noise = st->signal ? V2_NOISE_SIGNAL : V2_NOISE_NONE;
 	st->tone_flags = 0;
+}
+
+// ---- FM transmit (the vendor's key-up order: tune, path, width, output stage, microphone, sub-audio, audio, drive,
+// on) ----
+
+// After the tune and the path: the band pair for the TX frequency, the channel width (0x48), the output stage on, the
+// FM audio set-up
+void qa4818_v2_fm_tx(qa4818_t *c, uint32_t hz)
+{
+	lo_band(c, hz);
+	wr(c, 0x48, c->v2_wide ? 0x9826 : 0x082E);
+	wr(c, 0x49, 0x704F);
+	wr(c, 0x43, 0x1A40);
+	wr(c, 0x5C, 0x0001);
+	wr(c, 0x18, 0x006E);
+	wr(c, 0x1A, 0x64C1);
+	wr(c, 0x1B, 0x1258);
+}
+
+// The microphone's level: one of five codes in 0x10 (the vendor's table, by its microphone gain setting)
+static const uint16_t mic_codes[] = { 0x001F, 0x0022, 0x0025, 0x002C, 0x002F };
+void qa4818_v2_mic(qa4818_t *c, uint8_t idx)
+{
+	if (idx >= sizeof(mic_codes) / sizeof(mic_codes[0])) {
+		idx = (uint8_t)(sizeof(mic_codes) / sizeof(mic_codes[0]) - 1u);
+	}
+	wr(c, 0x10, (uint16_t)(mic_codes[idx] | 0xA380u));
+	wr(c, 0x11, 0x041A);
+	wr(c, 0x18, 0x006E);
+}
+
+// No sub-audio
+void qa4818_v2_no_tone(qa4818_t *c)
+{
+	wr(c, 0x2D, 0x3205);
+	wr(c, 0x2F, 0x0A0F);
+}
+
+// The tone generator off
+void qa4818_v2_tone_off(qa4818_t *c)
+{
+	wr(c, 0x2A, 0x1081);
+	wr(c, 0x16, 0x0000);
+	wr(c, 0x3F, 0x3232);
+}
+
+// The drive (0x31, 0 = off) and the sub-audio level (0x2E), from the chip's own calibration block (the board's)
+void qa4818_v2_drive(qa4818_t *c, uint16_t drive, uint16_t level)
+{
+	wr(c, 0x31, drive != 0 ? (uint16_t)(drive | 0x1000u) : 0);
+	wr(c, 0x2E, (uint16_t)(level | 0xC000u));
+}
+
+void qa4818_v2_drive_off(qa4818_t *c)
+{
+	wr(c, 0x31, 0);
+}
+
+void qa4818_v2_tx_on(qa4818_t *c)
+{
+	wr(c, 0x2B, 0x708D);
+	wr(c, 0x56, 0x0002);
 }

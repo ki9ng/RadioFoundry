@@ -645,7 +645,6 @@ static void test_v2_ops(void)
 
 	// What isn't ported writes nothing (a QA4818 write would land on another register of this chip)
 	n = s.n;
-	qa4818_tx_on(&c);
 	qa4818_beep(&c, 1000, 20, QA4818_AF_VOICE);
 	qa4818_af_out(&c, QA4818_AF_VOICE);
 	qa4818_gain(&c, 0x50);
@@ -654,6 +653,38 @@ static void test_v2_ops(void)
 	qa4818_init_trx(&c, 0x0001, 0x26AC);
 	qa4818_init_lo(&c);
 	CHECK(s.n == n);
+
+	// FM transmit, in the board's order: path (analog, 25 kHz), FM set-up, microphone, tone generator off, no
+	// sub-audio, drive (the board's, from the chip's calibration), on
+	qa4818_path(&c, true, false, true, 0x26AC);
+	CHECK(c.v2_wide && s.regs[0x2A] == 0x1081 && s.regs[0x19] == 0x0381 && s.regs[0x18] == 0x006E);
+	qa4818_fm_tx(&c, 146520000u);
+	CHECK(s.regs[0x48] == 0x9826 && s.regs[0x5C] == 1 && s.regs[0x5E] == 0x0468 && s.regs[0x60] == 0x0306);
+	qa4818_mic_level(&c, QA4818_MIC_GAIN_DEFAULT, 0x20);
+	CHECK(s.regs[0x10] == (0x0025u | 0xA380u) && s.regs[0x11] == 0x041A);
+	qa4818_mic_level(&c, 9, 0);
+	CHECK(s.regs[0x10] == (0x002Fu | 0xA380u));	// above the table: its last code
+	qa4818_tone_gen(&c, false);
+	CHECK(s.regs[0x16] == 0 && s.regs[0x3F] == 0x3232);
+	qa4818_tx_tone(&c, QA4818_TONE_CTCSS, 1000, 0, 0);	// sub-audio not ported: none
+	CHECK(s.regs[0x2D] == 0x3205 && s.regs[0x2F] == 0x0A0F);
+	n = s.n;
+	qa4818_tx_drive(&c, 146520000u, true, 0x40, 0x10);	// the board's job on this chip
+	CHECK(s.n == n);
+	qa4818_v2_drive(&c, 0x0123, 0x0045);
+	CHECK(s.regs[0x31] == 0x1123 && s.regs[0x2E] == 0xC045);
+	qa4818_v2_drive(&c, 0, 0);
+	CHECK(s.regs[0x31] == 0);
+	qa4818_tx_on(&c);
+	CHECK(s.regs[0x56] == 0x0002 && s.regs[0x2B] == 0x708D);
+	qa4818_tx_drive_off(&c);
+	CHECK(s.regs[0x31] == 0);
+	// A narrow channel, then a digital path: 0x48 narrow, 0x2A and chip 0's 0x19 bits for digital
+	qa4818_path(&c, false, false, false, 0x26AC);
+	qa4818_fm_tx(&c, 446000000u);
+	CHECK(s.regs[0x48] == 0x082E && s.regs[0x5E] == 0x0569);
+	qa4818_path(&c, false, true, false, 0x26AC);
+	CHECK(s.regs[0x2A] == 0x108C && s.regs[0x19] == (0x0381 | 0x0024));
 
 	// The debug link's register access: no pages
 	n = s.n;

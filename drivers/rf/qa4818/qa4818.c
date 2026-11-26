@@ -398,7 +398,8 @@ void qa4818_af_out(qa4818_t *c, uint16_t af)
 void qa4818_tx_on(qa4818_t *c)
 {
 	if (c->v2) {
-		return;	// not ported to the newer chip: leave it alone
+		qa4818_v2_tx_on(c);
+		return;
 	}
 	wr(c, 0x47, QA4818_AF_VOICE);
 	wr(c, QA4818_REG_ENABLE, QA4818_ENABLE_TX);
@@ -475,7 +476,8 @@ void qa4818_gpio(qa4818_t *c, uint16_t mask, uint16_t val)
 void qa4818_path(qa4818_t *c, bool tx, bool digital, bool wide, uint16_t r49)
 {
 	if (c->v2) {
-		qa4818_v2_path(c, tx);
+		c->v2_wide = wide;
+		qa4818_v2_path(c, digital);
 		return;
 	}
 	if_constants(c, r49);
@@ -606,7 +608,8 @@ void qa4818_rx_tone(qa4818_t *c, qa4818_tone_t type, uint16_t value)
 void qa4818_fm_tx(qa4818_t *c, uint32_t hz)
 {
 	if (c->v2) {
-		return;	// not ported to the newer chip: leave it alone
+		qa4818_v2_fm_tx(c, hz);
+		return;
 	}
 	static const rfbus_regval_t t[] = {
 		{ QA4818_REG_PAGE, 1 }, { 0x17, TX_AUDIO_MIC }, { 0x19, 0x7800 }, { 0x22, 0x1B00 }, { 0x1B, TX_PATH_VOICE },
@@ -638,7 +641,8 @@ void qa4818_dmr_tx(qa4818_t *c, uint32_t hz)
 void qa4818_tx_tone(qa4818_t *c, qa4818_tone_t type, uint16_t value, uint8_t cal_ctcss, uint8_t cal_dcs)
 {
 	if (c->v2) {
-		return;	// not ported to the newer chip: leave it alone
+		qa4818_v2_no_tone(c);	// CTCSS / DCS not ported: sent without sub-audio
+		return;
 	}
 	switch (type) {
 	case QA4818_TONE_CTCSS: {
@@ -672,7 +676,7 @@ static void drive(qa4818_t *c, uint16_t r40, uint8_t level)
 void qa4818_tx_drive(qa4818_t *c, uint32_t hz, bool wide, uint8_t d, uint8_t level)
 {
 	if (c->v2) {
-		return;	// not ported to the newer chip: leave it alone
+		return;	// the board drives it from the chip's own calibration (qa4818_v2_drive)
 	}
 	audio_plain(c);
 	drive(c, qa4818_drive_word(hz, wide, d), level);
@@ -681,7 +685,8 @@ void qa4818_tx_drive(qa4818_t *c, uint32_t hz, bool wide, uint8_t d, uint8_t lev
 void qa4818_tx_drive_off(qa4818_t *c)
 {
 	if (c->v2) {
-		return;	// not ported to the newer chip: leave it alone
+		qa4818_v2_drive_off(c);
+		return;
 	}
 	drive(c, 0, 0);
 }
@@ -689,7 +694,9 @@ void qa4818_tx_drive_off(qa4818_t *c)
 void qa4818_mic_level(qa4818_t *c, uint8_t gain, uint8_t cal)
 {
 	if (c->v2) {
-		return;	// not ported to the newer chip: leave it alone
+		(void)cal;	// five codes by the gain levels 2..7 (default 4: the middle one)
+		qa4818_v2_mic(c, gain > 2u ? (uint8_t)(gain - 2u) : 0u);
+		return;
 	}
 	wr(c, 0x18, (uint16_t)(0x0125u | (uint16_t)(gain & 7u) << 11));
 	page(c, 1);
@@ -740,7 +747,10 @@ void qa4818_tone_start(qa4818_t *c, uint16_t hz)
 void qa4818_tone_gen(qa4818_t *c, bool on)
 {
 	if (c->v2) {
-		return;	// not ported to the newer chip: leave it alone
+		if (!on) {
+			qa4818_v2_tone_off(c);
+		}	// on: the tone generator isn't ported
+		return;
 	}
 	wr(c, QA4818_REG_TONE_GEN, on ? TONE_GEN_ON : 0);
 }

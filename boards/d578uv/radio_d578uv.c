@@ -53,6 +53,7 @@
 #endif
 #include "rf/rfbus/rfbus.h"
 #include "rf/qa4818/qa4818_v2.h"
+#include "debuglink/dlog.h"
 #include "rf/qa4818/qa4818.h"
 #include "front_io.h"
 #include "pa_gate.h"
@@ -250,6 +251,13 @@ static rx2_status_t b_st = { .up = true };	// what status() gives other tasks
 
 static uint32_t cal_base;		// 0: none
 static uint8_t cal_uhf[CAL_BLOCK_LEN], cal_vhf[CAL_BLOCK_LEN];
+// The newer RF chip's own calibration (ki9ng fork): 0x30 bytes at the calibration's 0x680, 16-bit words: 0-2 the
+// transmit drive above 300 MHz, below 200 MHz, between; 3 and 4 the sub-audio level (none / CTCSS, DCS); 0x24 the
+// frequency trim; byte 0x2E 'U' when written (the vendor firmware's layout)
+#define CAL_V2			0x680u
+#define CAL_V2_LEN		0x30u
+static uint8_t cal_v2[CAL_V2_LEN];
+static bool cal_v2_ok;
 
 static radio_mode_t mode = RADIO_MODE_FM;
 static uint32_t rx_hz;
@@ -772,7 +780,18 @@ static void cal_load(void)
 	cal_base = base;
 	if (!cal_read(CAL_UHF, cal_uhf, CAL_BLOCK_LEN) || !cal_read(CAL_VHF, cal_vhf, CAL_BLOCK_LEN)) {
 		cal_base = 0;
+		return;
 	}
+	cal_v2_ok = cal_read(CAL_V2, cal_v2, CAL_V2_LEN) && cal_v2[0x2E] == 'U';
+	dlog("cal v2 %s drive %04x %04x %04x lvl %04x %04x", cal_v2_ok ? "ok" : "absent",
+	     (unsigned)(cal_v2[0] | cal_v2[1] << 8), (unsigned)(cal_v2[2] | cal_v2[3] << 8),
+	     (unsigned)(cal_v2[4] | cal_v2[5] << 8), (unsigned)(cal_v2[6] | cal_v2[7] << 8),
+	     (unsigned)(cal_v2[8] | cal_v2[9] << 8));
+}
+
+static uint16_t cal_v2_word(unsigned i)
+{
+	return (uint16_t)(cal_v2[2u * i] | cal_v2[2u * i + 1u] << 8);
 }
 
 uint32_t d578uv_tx_hz(void)
@@ -2066,6 +2085,10 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *t)
 	if (dac == 0) {
 		return false;	// no calibration here: the override doesn't stand in for one
 	}
+	// The newer RF chip transmits from its own calibration block, FM only so far (ki9ng fork)
+	if (chip_if.v2 && (!cal_v2_ok || mode == RADIO_MODE_DMR)) {
+		return false;
+	}
 	if (drive_next != 0) {
 		dac = drive_next;
 	}
@@ -2131,6 +2154,9 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *t)
 	qa4818_tone_gen(&chip_if, false);	// no burst left on from a previous key-up
 	qa4818_tx_tone(&chip_if, tone, t != NULL ? t->value : 0, lvl_ctcss, lvl_dcs);
 	qa4818_tx_drive(&chip_if, hz, wide, drive, tx_level);
+	if (chip_if.v2) {
+		qa4818_v2_drive(&chip_if, cal_v2_word(hz > 300000000u ? 0u : hz < 200000000u ? 1u : 2u), cal_v2_word(dcs ? 4u : 3u));
+	}
 	qa4818_tx_on(&chip_if);
 #if CONFIG_AIR
 	if (air) {
