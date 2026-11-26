@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
+// Copyright (c) 2026 KI9NG
 // The MCU services a board uses when it runs on more than one platform (boards/d578uv: the GD32F30x and the AT32F43x
 // builds of one radio). Every platform such a board runs on has an mcu_io.h with these names (platform/at32f43x has
 // the other); here they are the GD32F30x platform's own calls, so the build is the same as calling them directly.
@@ -24,6 +25,8 @@ typedef gd32_pull_t mcu_pull_t;
 static inline void mcu_pin_force(mcu_gpio_t *p, uint16_t pins, bool level) { gd32_pin_force(p, pins, level); }
 static inline void mcu_pin_out(mcu_gpio_t *p, uint16_t pins, bool level, bool od) { gd32_pin_out(p, pins, level, od); }
 static inline void mcu_pin_in(mcu_gpio_t *p, uint16_t pins, mcu_pull_t pull) { gd32_pin_in(p, pins, pull); }
+// A USART's RX pin: a plain input on the GD32 (its USART takes the pin as is; af unused)
+static inline void mcu_pin_uart_rx(mcu_gpio_t *p, uint16_t pins, uint8_t af, mcu_pull_t pull) { (void)af; gd32_pin_in(p, pins, pull); }
 static inline void mcu_pin_analog(mcu_gpio_t *p, uint16_t pins) { gd32_pin_analog(p, pins); }
 static inline void mcu_pin_write(mcu_gpio_t *p, uint16_t pins, bool level) { gd32_pin_write(p, pins, level); }
 static inline bool mcu_pin_read(mcu_gpio_t *p, uint16_t pin) { return gd32_pin_read(p, pin); }

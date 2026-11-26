@@ -149,7 +149,7 @@ void d578uv_bt_init(void)
 	bt.raw_sink = kiss_sink;
 	kiss_dec_init(&kdec);
 #endif
-	mcu_pin_in(PIN_BT_RX, MCU_PULL_UP);
+	mcu_pin_uart_rx(PIN_BT_RX, BT_TX_AF, MCU_PULL_UP);	// UART4 RX is AF8 on PC11 too (AT32); GD32: plain input
 	mcu_pin_af(PIN_BT_TX, BT_TX_AF, false);
 	mcu_uart_start(MCU_UART4, BT_BAUD, true);
 	NVIC_SetPriority(MCU_UART4_IRQn, BT_IRQ_PRIORITY);

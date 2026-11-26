@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
+// Copyright (c) 2026 KI9NG
 // GPS NMEA on an AT32F43x USART (gps_uart.h)
 #include <stddef.h>
 #include "gps_uart/gps_uart.h"
@@ -71,8 +72,8 @@ static void tx_byte(uint8_t c)
 	u->DT = c;
 }
 
-// The supply and the receive path together. The RX pin stays a floating input: the USART takes an input pin as is, and
-// a pull-up would feed an unpowered module through its TX line
+// The supply and the receive path together. The RX pin is in MUX mode with no pull (at32_gps_init): a pull-up would
+// feed an unpowered module through its TX line
 static void gps_on(bool on)
 {
 	at32_usart_t *u = cfg->uart;
@@ -166,7 +167,7 @@ void at32_gps_init(const at32_gps_cfg_t *c)
 {
 	cfg = c;
 	present = false;
-	at32_pin_in(c->rx_port, c->rx_pin, AT32_PULL_NONE);
+	at32_pin_af_in(c->rx_port, c->rx_pin, tx_af(), AT32_PULL_NONE);	// RX takes the TX pin's function number (USART1-3: 7, UART4/5: 8)
 	if (task == NULL) {
 		xTaskCreate(gps_task, "gps", GPS_TASK_STACK, NULL, GPS_TASK_PRIORITY, &task);
 	}

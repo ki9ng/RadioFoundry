@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
+// Copyright (c) 2026 KI9NG
 // AT32F43x pin set-up: the STM32F4's GPIO layout, two bits a pin for the mode and the pull, one for the output type,
 // four for the multiplexed function (at32f43x.h)
 #include "platform.h"
@@ -79,6 +80,15 @@ void at32_pin_af(at32_gpio_t *port, uint16_t pins, uint8_t af, bool open_drain)
 	port->MUXH = hi;
 	__set_PRIMASK(primask);
 	pin_cfg(port, pins, MODE_MUX, open_drain, AT32_PULL_NONE);
+}
+
+// A peripheral input on a multiplexed pin (a USART's RX): the AT32F43x routes a pin to a peripheral only in MUX mode
+// with its function selected, as Artery's own USART examples set RX (ki9ng fork: the AT-D578UV's UART4 and GPS
+// receivers heard nothing with the pin a plain input, first AT32 boot 2026-11-26)
+void at32_pin_af_in(at32_gpio_t *port, uint16_t pins, uint8_t af, at32_pull_t pull)
+{
+	at32_pin_af(port, pins, af, false);
+	pin_cfg(port, pins, MODE_MUX, false, pull);
 }
 
 void at32_pin_analog(at32_gpio_t *port, uint16_t pins)
