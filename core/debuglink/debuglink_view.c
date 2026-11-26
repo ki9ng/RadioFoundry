@@ -435,6 +435,14 @@ static void link_section(dl_text_t *t)
 			(unsigned)bt.ptt, (unsigned)bt.key, (unsigned)bt.keys);
 		dl_text(t, "input.bt_lines=%u\ninput.bt_errors=%u\ninput.bt_links=%u\ninput.bt_offs=%u\n",
 			(unsigned)bt.lines, (unsigned)bt.errors, (unsigned)bt.links, (unsigned)bt.offs);
+		dl_text(t, "input.bt_aprs_board=%u\ninput.bt_oks=%u\ninput.bt_errs=%u\n", (unsigned)bt.aprs_board,
+			(unsigned)bt.oks, (unsigned)bt.errs);
+#if CONFIG_BT_KISS
+		dl_text(t, "input.bt_kiss_taken=%u\ninput.bt_kiss_raw=%u\ninput.bt_kiss_in=%u\ninput.bt_kiss_drop=%u\n",
+			(unsigned)bt.kiss_taken, (unsigned)bt.kiss_raw, (unsigned)bt.kiss_in, (unsigned)bt.kiss_drop);
+		dl_text(t, "input.bt_kiss_out=%u\ninput.bt_kiss_out_bytes=%u\ninput.bt_kiss_timeouts=%u\n",
+			(unsigned)bt.kiss_out, (unsigned)bt.kiss_out_bytes, (unsigned)bt.kiss_timeouts);
+#endif
 	}
 	dl_text(t, "input.long_ms=%u\ninput.ptt_downs=%u\n", (unsigned)input_long_ms(), (unsigned)input_ptt_downs());
 	if (board.system != NULL && board.system->irq_unhandled != NULL) {

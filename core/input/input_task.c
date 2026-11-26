@@ -297,8 +297,14 @@ bool input_bt_stats(hal_bt_stats_t *st)
 {
 	if (board.input == NULL || board.input->bt_stats == NULL)
 		return false;
+	memset(st, 0, sizeof(*st));	// fields a board doesn't fill (the KISS counters) read 0
 	board.input->bt_stats(st);
 	return true;
+}
+
+bool input_bt_kiss_taken(void)
+{
+	return board.input != NULL && board.input->bt_kiss_taken != NULL && board.input->bt_kiss_taken();
 }
 
 // --- Injection ---

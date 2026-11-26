@@ -42,6 +42,9 @@
 #endif
 #include "debuglink/dlog.h"
 #include "settings/settings.h"
+#if CONFIG_BT_KISS
+#include "input/input.h"
+#endif
 #if CONFIG_WATCHDOG
 #include "app/watchdog.h"
 #endif
@@ -620,6 +623,9 @@ static void hostlink_task(void *arg)
 		bool tnc_out = !net_tnc_taken();	// else KISS over TCP or APRS-IS takes it (core/net)
 #else
 		bool tnc_out = true;
+#endif
+#if CONFIG_BT_KISS
+		tnc_out = tnc_out && !input_bt_kiss_taken();	// a phone over Bluetooth takes it (boards' bt_kiss_taken)
 #endif
 		if ((tnc != NULL) && tnc_out && ((mode == HOSTLINK_IDLE) || (mode == HOSTLINK_TNC))) {
 			size_t n;

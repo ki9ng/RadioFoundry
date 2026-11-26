@@ -280,5 +280,8 @@ const hal_input_t d578uv_input = {
 	.hand_mic_stats = d578uv_hand_mic,
 #if CONFIG_BT_PTT
 	.bt_stats = d578uv_bt_stats,
+#if CONFIG_BT_KISS
+	.bt_kiss_taken = d578uv_bt_kiss_taken,
+#endif
 #endif
 };

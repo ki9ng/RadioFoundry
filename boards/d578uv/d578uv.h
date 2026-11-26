@@ -181,6 +181,9 @@ void d578uv_bt_init(void);
 uint32_t d578uv_bt_scan(void);		// key bits from the module, the probe while nothing has answered
 void d578uv_bt_stats(hal_bt_stats_t *st);
 bool d578uv_bt_linked(void);		// a link is up (radio task)
+#if CONFIG_BT_KISS
+bool d578uv_bt_kiss_taken(void);	// a phone on the SPP server takes the APRS host output
+#endif
 void d578uv_bt_off(void);		// the radio powered the module off: counted for the debug link
 #else
 static inline bool d578uv_bt_linked(void)

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
+// Copyright (c) 2026 KI9NG
 // A Bluetooth module that speaks AT lines on a UART: PTT and keys from its PTT button and its hand microphone, taken a
 // byte at a time from a UART interrupt. Pure and allocation free, so the host tests run it. The board's hardware page
 // has the module, its wiring and these lines (inferred, untested on a radio).
@@ -19,6 +20,11 @@
 //
 // Links: +CONN= with an address counts one up, +DISC= or the all-zero address one down, +READY clears them. The
 // board uses the count to know the module serves nobody (links == 0) and may be powered off for a while.
+//
+// Raw payloads (ki9ng fork, CONFIG_BT_KISS): the same +ADATA tunnel carries what a phone writes to the module's SPP
+// server (RFCOMM channel 2). A payload whose first byte isn't '+' is taken as raw bytes, all len of them, handed to
+// raw_sink (in the UART interrupt) instead of being parsed as lines; a KISS frame starts with FEND (0xC0). The
+// module's OK and ERR replies are counted (oks, errs): the board paces its own AT+ADATA sends on them.
 #ifndef BT_AT_H
 #define BT_AT_H
 
@@ -43,6 +49,11 @@ typedef struct {
 	uint32_t key_events;		// +KEY lines taken: a new one is a new key press
 	uint8_t links;			// links up (key fob, hand mic, headset, host), BT_AT_LINKS_MAX at most
 	uint32_t lines, errors;		// lines taken; bytes or lines dropped (diagnostics)
+	bool payload_first;		// the next byte is an +ADATA payload's first: it decides lines or raw
+	bool raw;			// the payload under way is raw bytes (its first byte wasn't '+')
+	uint32_t raw_bytes;		// raw payload bytes taken
+	uint32_t oks, errs;		// OK and ERR replies from the module
+	void (*raw_sink)(uint8_t c);	// where raw payload bytes go (NULL: dropped); called in the UART interrupt
 } bt_at_t;
 
 static inline void bt_at_init(bt_at_t *b)
@@ -67,6 +78,8 @@ static inline void bt_at_error(bt_at_t *b)
 {
 	b->n = 0;
 	b->payload = 0;
+	b->payload_first = false;
+	b->raw = false;
 	b->errors++;
 }
 
@@ -135,6 +148,8 @@ static inline void bt_at_line(bt_at_t *b, const char *s)
 		int32_t len = c != NULL ? bt_at_number(c + 1) : -1;
 		if (len > 0 && len < 1000) {
 			b->payload = (uint16_t)len;
+			b->payload_first = true;
+			b->raw = false;
 		}
 	} else if (strcmp(s, "+READY") == 0) {
 		bt_at_release(b);
@@ -151,12 +166,30 @@ static inline void bt_at_line(bt_at_t *b, const char *s)
 		}
 	} else if (bt_at_starts(s, "+APRS:")) {
 		b->aprs_board = true;
+	} else if (strcmp(s, "OK") == 0) {
+		b->oks++;
+	} else if (bt_at_starts(s, "ERR")) {
+		b->errs++;
 	}
 }
 
 // One received byte
 static inline void bt_at_byte(bt_at_t *b, uint8_t c)
 {
+	if (b->payload > 0 && b->n == 0 && b->payload_first) {
+		b->payload_first = false;
+		b->raw = c != '+';
+	}
+	if (b->raw) {
+		b->raw_bytes++;
+		if (b->raw_sink != NULL) {
+			b->raw_sink(c);
+		}
+		if (--b->payload == 0) {
+			b->raw = false;
+		}
+		return;
+	}
 	if (b->n == 0 && c != '+' && c != 'O' && c != 'E') {
 		if (b->payload > 0) {
 			b->payload--;	// a payload's line ends (CR LF) don't start a line

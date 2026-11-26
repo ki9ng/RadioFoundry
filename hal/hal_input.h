@@ -101,6 +101,16 @@ typedef struct {
 	uint32_t errors;	// bytes or lines dropped
 	uint8_t links;		// links up (key fob, hand mic, headset, host)
 	uint32_t offs;		// times the board powered the module off while it served no link
+	bool aprs_board;	// the APRS add-on board answered (it relays the module on the AT-D578UV PLUS)
+	// KISS over the module's SPP server (CONFIG_BT_KISS; zero without it)
+	bool kiss_taken;	// a phone holds the APRS host output
+	uint32_t kiss_raw;	// raw payload bytes from the module
+	uint32_t kiss_in;	// KISS frames from the phone handed to the APRS engine
+	uint32_t kiss_drop;	// raw bytes lost (receive ring full)
+	uint32_t kiss_out;	// AT+ADATA sends to the phone
+	uint32_t kiss_out_bytes;	// KISS bytes in them
+	uint32_t oks, errs;	// the module's OK and ERR replies
+	uint32_t kiss_timeouts;	// sends that got no reply in time
 } hal_bt_stats_t;
 
 typedef struct {
@@ -116,6 +126,8 @@ typedef struct {
 	void (*hand_mic_stats)(hal_hand_mic_stats_t *st);
 	// The Bluetooth module's state (NULL: no module, or CONFIG_BT_PTT off)
 	void (*bt_stats)(hal_bt_stats_t *st);
+	// A phone on the Bluetooth module's SPP server takes the APRS engine's KISS output (CONFIG_BT_KISS; NULL: never)
+	bool (*bt_kiss_taken)(void);
 	// The channel knob turns between end stops (a 16-position switch), not endlessly: false for a quadrature encoder
 	bool encoder_limited;
 	// A channel switch read as an absolute position (drivers/input/chswitch), on a radio whose knob picks the zone's
