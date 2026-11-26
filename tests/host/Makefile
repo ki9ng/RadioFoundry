@@ -621,8 +621,8 @@ subaudioTest: subaudioTest.c $(SUBAUDIO) $(ROOT)/drivers/rf/subaudio/subaudio.h
 # The QA4818-class transceiver: pure helpers and register sequences on a fake bus
 TESTS   += qa4818Test
 
-qa4818Test: qa4818Test.c $(ROOT)/drivers/rf/qa4818/qa4818.c $(ROOT)/drivers/rf/qa4818/qa4818.h $(RFBUS) $(SUBAUDIO)
-	$(CC) $(CFLAGS) -Wshadow -o $@ qa4818Test.c $(ROOT)/drivers/rf/qa4818/qa4818.c $(RFBUS) $(SUBAUDIO)
+qa4818Test: qa4818Test.c $(ROOT)/drivers/rf/qa4818/qa4818.c $(ROOT)/drivers/rf/qa4818/qa4818_v2.c $(ROOT)/drivers/rf/qa4818/qa4818.h $(ROOT)/drivers/rf/qa4818/qa4818_v2.h $(RFBUS) $(SUBAUDIO)
+	$(CC) $(CFLAGS) -Wshadow -o $@ qa4818Test.c $(ROOT)/drivers/rf/qa4818/qa4818.c $(ROOT)/drivers/rf/qa4818/qa4818_v2.c $(RFBUS) $(SUBAUDIO)
 
 run: run-rf
 run-rf: at1846sTest subaudioTest qa4818Test

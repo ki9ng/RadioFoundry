@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
+// Copyright (c) 2026 KI9NG
 // The 3-wire bit-banged bus (drivers/rf/rfbus): frames on a model chip that samples the data line on each rising clock
 // edge and answers reads on the falling ones, in the normal and the fast timing. Time moves only in the bus's waits,
 // the worst case for a fast MCU: the fast bus must still leave 1 us between the address's last falling edge and the
@@ -22,6 +23,7 @@ static struct {
 	uint32_t gap_ns;		// from it to the 9th rising edge
 	uint16_t reply;			// what the chip answers a read with
 	bool reading;
+	bool rw_lsb;			// the chip takes the read flag in bit 0 of the address byte (addr_shift)
 	uint32_t frames;
 	uint32_t last;			// the last frame's 24 bits (a read's: the address only)
 } m;
@@ -51,7 +53,7 @@ static void clk(bool v)
 				m.shift = m.shift << 1 | (m.data ? 1u : 0u);
 			}
 			m.bits++;
-			if (m.bits == 8 && (m.shift & 0x80u) != 0) {
+			if (m.bits == 8 && (m.shift & (m.rw_lsb ? 0x01u : 0x80u)) != 0) {
 				m.reading = true;
 			}
 		} else if (!v && m.clk) {
@@ -96,6 +98,22 @@ static void run(bool fast)
 	CHECK((m.last & 0xFFu) == (0x44u | 0x80u));
 	CHECK(m.gap_ns >= 1000u);
 	CHECK(!m.driven);
+
+	// addr_shift (the newer chip in QA4818 sockets, ki9ng fork): the address in bits 7:1, R/W in bit 0
+	b.bus.addr_shift = true;
+	m.rw_lsb = true;
+	rfbus_write(&b.bus, 0x57, 0xA888);
+	CHECK(m.last == ((0x57u << 1) << 16 | 0xA888u));
+	rfbus_write(&b.bus, 0xD2, 0x0041);	// bit 7 of the register still dropped
+	CHECK(m.last == ((0x52u << 1) << 16 | 0x0041u));
+	m.reply = 0x1234;
+	v = rfbus_read(&b.bus, 0x0E);
+	CHECK(v == 0x1234);
+	CHECK((m.last & 0xFFu) == ((0x0Eu << 1) | 1u));
+	CHECK(!m.driven);
+	rfbus_3w_attach(&b, &pins);
+	CHECK(!b.bus.addr_shift);	// a new attach starts in the QA4818's format
+	m.rw_lsb = false;
 }
 
 int main(void)

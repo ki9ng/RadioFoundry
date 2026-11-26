@@ -1,0 +1,275 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 KI9NG
+// The newer RF chip in QA4818 sockets (ki9ng fork). AT-D578UV PLUS radios built with the Artery MCU carry it in
+// all four RF slots. The vendor firmware (AT 2.08) tells the two apart per slot at start-up and drives this one with:
+//   - an address byte of (reg << 1) | R/W, the R/W flag in bit 0 (the QA4818 takes reg | 0x80 to read)
+//   - no register pages
+//   - its own register program for every operation: enable 0x56, output stage 0x5C, GPIO one pin per 0x52 write,
+//     frequency in Hz in 0x69 (high) / 0x68 (low), status 0x0E, RSSI 0x02
+// The values here are the vendor firmware's for this chip (static analysis of AT 2.08, KI9NG 2026-11-26; fork only:
+// docs/CLEANROOM.md keeps it out of RadioFoundry upstream). Receive is ported; transmit, sub-audio, beeps and the
+// AF selector are not yet, and their entry points leave the chip alone.
+#include "qa4818.h"
+#include "qa4818_v2.h"
+
+#define MHZ(x)		((uint32_t)(x) * 1000000u)
+#define INIT_HZ		435125000u	// both inits tune here, as the QA4818's do
+#define PROBE_TRIES	100u
+#define V2_PROBE_VAL	0xA888u
+#define QA4818_ID	0x7813u		// the QA4818's register 0x00
+
+static void wr(qa4818_t *c, uint8_t reg, uint16_t val)
+{
+	rfbus_write(c->bus, reg, val);
+}
+
+static uint16_t rd(qa4818_t *c, uint8_t reg)
+{
+	return rfbus_read(c->bus, reg);
+}
+
+static void wr_list(qa4818_t *c, uint8_t reg, const uint16_t *v, size_t n)
+{
+	for (size_t i = 0; i < n; i++) {
+		wr(c, reg, v[i]);
+	}
+}
+
+bool qa4818_probe(qa4818_t *c)
+{
+	c->bus->addr_shift = false;
+	c->v2 = false;
+	wr(c, 0x7F, 0);
+	for (unsigned i = 0; i < PROBE_TRIES; i++) {
+		if (rd(c, 0x00) == QA4818_ID) {
+			return true;
+		}
+		rfbus_delay_ms(c->bus, 1);
+	}
+	c->bus->addr_shift = true;
+	wr(c, 0x50, 0x0001);
+	wr(c, 0x58, 0xF1F0);
+	for (unsigned i = 0; i < PROBE_TRIES; i++) {
+		wr(c, 0x57, V2_PROBE_VAL);
+		rfbus_delay_ms(c->bus, 1);
+		if (rd(c, 0x57) == V2_PROBE_VAL) {
+			c->v2 = true;
+			return true;
+		}
+		rfbus_delay_ms(c->bus, 1);
+	}
+	c->bus->addr_shift = false;	// neither answered: left as a QA4818
+	return false;
+}
+
+// Frequency: Hz in 0x69 (high word) then 0x68 (low word)
+static void freq(qa4818_t *c, uint32_t hz)
+{
+	wr(c, 0x69, (uint16_t)(hz >> 16));
+	wr(c, 0x68, (uint16_t)hz);
+}
+
+// A local oscillator's pair for its band, written before each tune
+static void lo_band(qa4818_t *c, uint32_t hz)
+{
+	if (hz < MHZ(390)) {
+		wr(c, 0x5E, 0x0468);
+		wr(c, 0x60, 0x0306);
+	} else {
+		wr(c, 0x5E, 0x0569);
+		wr(c, 0x60, 0x0309);
+	}
+}
+
+void qa4818_v2_tune(qa4818_t *c, uint32_t hz)
+{
+	if (c->lo) {
+		lo_band(c, hz);
+	}
+	freq(c, hz);
+}
+
+static const uint16_t ramp40_lo[] = { 0x70E6, 0x60FF, 0x50F4, 0x40E8, 0x30DC, 0x20CD, 0x10C3, 0x00B9 };
+static const uint16_t ramp53_lo[] = { 0x773C, 0x677C, 0x56BB, 0x46BF, 0x3674, 0x2474, 0x1233, 0x0030 };
+static const uint16_t ramp53_trx[] = { 0x773F, 0x673F, 0x56FF, 0x46BE, 0x34BC, 0x247B, 0x1279, 0x0076 };
+static const uint16_t r49_set[] = { 0x0050, 0x1078, 0x7034, 0xB0CC };
+
+void qa4818_v2_init_lo(qa4818_t *c, bool trx_v2)
+{
+	wr(c, 0x50, 0x0001);
+	wr(c, 0x58, 0xF1F0);
+	wr_list(c, 0x40, ramp40_lo, sizeof(ramp40_lo) / sizeof(ramp40_lo[0]));
+	wr_list(c, 0x53, ramp53_lo, sizeof(ramp53_lo) / sizeof(ramp53_lo[0]));
+	if (trx_v2) {
+		wr(c, 0x5B, 0xB085);	// written when the transceivers are this chip too
+	}
+	wr(c, 0x41, 0x7152);
+	wr(c, 0x43, 0x0A57);
+	wr(c, 0x44, 0x1490);
+	wr(c, 0x45, 0x8874);
+	wr(c, 0x46, 0x006E);
+	wr(c, 0x47, 0x07FE);
+	wr_list(c, 0x49, r49_set, sizeof(r49_set) / sizeof(r49_set[0]));
+	wr(c, 0x4D, 0x0000);
+	wr(c, 0x57, 0xA008);
+	wr(c, 0x5A, 0x8005);
+	wr(c, 0x5D, 0xA610);
+	wr(c, 0x5C, 0x0000);
+	wr(c, 0x5F, 0x0768);
+	wr(c, 0x2A, 0x1081);
+	lo_band(c, INIT_HZ);
+	wr(c, 0x30, 0x5F6B);
+	qa4818_v2_tune(c, INIT_HZ);
+	wr(c, 0x59, 0x221C);
+	wr(c, 0x29, 0x1090);
+	wr(c, 0x66, 0xAA84);
+	wr(c, 0x56, 0x0000);
+}
+
+// Coefficient pairs of the analog receive path (0x20-0x23 and 0x1C-0x1F), at the vendor's indices for it
+static void coef_20(qa4818_t *c)
+{
+	wr(c, 0x20, 0x8D15);
+	wr(c, 0x21, 0x3B99);
+	wr(c, 0x22, 0x8D90);
+	wr(c, 0x23, 0x3B15);
+}
+
+static void coef_1c(qa4818_t *c)
+{
+	wr(c, 0x1C, 0x810A);
+	wr(c, 0x1D, 0x3F0D);
+	wr(c, 0x1E, 0x80C3);
+	wr(c, 0x1F, 0x3F54);
+}
+
+void qa4818_v2_path(qa4818_t *c, bool tx)
+{
+	if (!tx) {
+		wr(c, 0x11, 0x041A);
+		wr(c, 0x2B, 0x708D);
+		wr(c, 0x53, 0x773F);
+		wr(c, 0x26, 0x6468);
+		wr(c, 0x27, 0x6080);
+		wr(c, 0x27, 0x199C);
+		wr(c, 0x18, 0x006E);
+		wr(c, 0x24, 0xF4AF);
+		wr(c, 0x25, 0x0B56);
+		wr(c, 0x32, 0x22A2);
+		coef_20(c);
+		coef_1c(c);
+	} else {
+		wr(c, 0x2B, 0x708D);
+		wr(c, 0x18, 0x026E);
+		wr(c, 0x24, 0xF4AF);
+		wr(c, 0x25, 0x0B56);
+		wr(c, 0x26, 0x6068);
+		wr(c, 0x32, 0x0622);
+		wr(c, 0x53, 0x773F);
+	}
+}
+
+void qa4818_v2_init_trx(qa4818_t *c, bool side_b)
+{
+	wr(c, 0x50, 0x0001);
+	wr(c, 0x58, 0xF1F0);
+	wr_list(c, 0x40, ramp40_lo, sizeof(ramp40_lo) / sizeof(ramp40_lo[0]));
+	wr_list(c, 0x53, ramp53_trx, sizeof(ramp53_trx) / sizeof(ramp53_trx[0]));
+	wr(c, 0x43, 0x1A40);
+	if (side_b) {
+		wr(c, 0x5B, 0xB085);
+	}
+	wr(c, 0x41, 0x711A);
+	wr(c, 0x42, 0x4A61);
+	wr(c, 0x44, 0x1490);
+	wr(c, 0x45, 0x8874);
+	wr(c, 0x46, 0x006E);
+	c->v2_51 = rd(c, 0x51) == 3u;
+	wr(c, 0x47, c->v2_51 ? 0x27FE : 0x67FE);
+	wr_list(c, 0x49, r49_set, sizeof(r49_set) / sizeof(r49_set[0]));
+	wr(c, 0x4D, 0x0000);
+	wr(c, 0x57, 0xA008);
+	wr(c, 0x5C, 0x0001);
+	wr(c, 0x5D, 0x8611);
+	wr(c, 0x5E, 0x0768);
+	wr(c, 0x5F, 0x0768);
+	wr(c, 0x60, 0x0300);
+	wr(c, 0x2A, 0x1081);
+	wr(c, 0x30, 0x5F6B);
+	qa4818_v2_path(c, false);
+	wr(c, 0x19, 0x0381);
+	wr(c, 0x48, 0x9826);
+	wr(c, 0x49, 0x704F);
+	wr(c, 0x43, 0x1A40);
+	freq(c, INIT_HZ);
+	wr(c, 0x59, 0x221C);
+	wr(c, 0x29, 0x1090);
+	wr(c, 0x56, 0x0000);
+	wr(c, 0x3C, 0x00FC);
+}
+
+void qa4818_v2_rx_on(qa4818_t *c, uint32_t hz)
+{
+	wr(c, 0x58, 0xF1F0);
+	wr(c, 0x5F, 0x0768);
+	wr(c, 0x60, 0x0302);
+	(void)hz;		// a digital channel picks 0x1090 / 0x10B0 by band (not ported)
+	wr(c, 0x29, 0x1090);
+	wr(c, 0x56, 0x0001);
+}
+
+void qa4818_v2_lo_on(qa4818_t *c)
+{
+	wr(c, 0x56, 0x0000);
+	wr(c, 0x56, 0x0006);
+}
+
+void qa4818_v2_off(qa4818_t *c)
+{
+	wr(c, 0x56, 0x0000);
+}
+
+void qa4818_v2_out(qa4818_t *c, uint16_t value)
+{
+	wr(c, 0x5C, (value == QA4818_OUT_TX_VHF || value == QA4818_OUT_TX_UHF) ? 0x0001 : 0x0000);
+}
+
+void qa4818_v2_rx_setup(qa4818_t *c, bool digital)
+{
+	if (!digital) {
+		wr(c, 0x18, 0x006E);
+	}
+}
+
+// One pin per write: pin << 12 | 0x40 | level. Bit n of the QA4818's 0x25 is pin n here
+void qa4818_v2_gpio(qa4818_t *c, uint16_t old, uint16_t now, bool all)
+{
+	for (unsigned pin = 0; pin < 8u; pin++) {
+		uint16_t bit = (uint16_t)(1u << pin);
+		if (all || ((old ^ now) & bit) != 0) {
+			wr(c, 0x52, (uint16_t)((pin << 12) | 0x40u | ((now & bit) != 0 ? 1u : 0u)));
+		}
+	}
+}
+
+uint16_t qa4818_v2_reg(qa4818_t *c, uint8_t reg, uint16_t val, bool write)
+{
+	if (write) {
+		wr(c, reg, val);
+	}
+	return rd(c, reg);
+}
+
+// Status: 0x0E bit 14 is the chip's signal flag; 0x02 bits 9:0 its RSSI, 4 counts a QA4818 count (the vendor's
+// thresholds for it are 4x the QA4818's, so a QA4818 count is half a dB: inferred). No noise register is known: the
+// core's squelch gets a low noise with the signal flag, a high one without
+#define V2_NOISE_SIGNAL	8u
+#define V2_NOISE_NONE	60u
+void qa4818_v2_status(qa4818_t *c, qa4818_status_t *st)
+{
+	uint16_t s = rd(c, 0x0E);
+	st->signal = (s & 0x4000u) != 0;
+	st->rssi = (uint16_t)((rd(c, 0x02) & 0x3FFu) >> 2);
+	st->noise = st->signal ? V2_NOISE_SIGNAL : V2_NOISE_NONE;
+	st->tone_flags = 0;
+}

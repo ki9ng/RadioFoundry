@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
+// Copyright (c) 2026 KI9NG
 // RF chip register bus and its 3-wire bit-banged implementation (rfbus.h)
 #include "rfbus.h"
 
@@ -47,14 +48,15 @@ static void write_3w(rfbus_t *bus, uint8_t reg, uint16_t val)
 	const rfbus_3w_pins_t *p = ((rfbus_3w_t *)bus)->pins;
 	uint32_t s = enter(p);
 	p->cs(false);
-	// Bit 7 of the address is the read flag: a write never sets it
+	// Bit 7 of the address is the read flag: a write never sets it (addr_shift: bit 0, the address above it)
+	uint8_t a = bus->addr_shift ? (uint8_t)((reg & 0x7Fu) << 1) : (uint8_t)(reg & 0x7Fu);
 	if (p->fast) {
-		send_bits(p, reg & 0x7Fu, 8);
+		send_bits(p, a, 8);
 		p->clk(false);
 		p->delay_us(ADDR_GAP_US);
 		send_bits(p, val, 16);
 	} else {
-		send_bits(p, (uint32_t)(reg & 0x7Fu) << 16 | val, 24);
+		send_bits(p, (uint32_t)a << 16 | val, 24);
 	}
 	p->clk(false);
 	p->cs(true);
@@ -66,7 +68,7 @@ static uint16_t read_3w(rfbus_t *bus, uint8_t reg)
 	const rfbus_3w_pins_t *p = ((rfbus_3w_t *)bus)->pins;
 	uint32_t s = enter(p);
 	p->cs(false);
-	send_bits(p, (reg & 0x7Fu) | READ_BIT, 8);
+	send_bits(p, bus->addr_shift ? (uint8_t)(((reg & 0x7Fu) << 1) | 1u) : (uint8_t)((reg & 0x7Fu) | READ_BIT), 8);
 	p->clk(false);
 	p->data_release();
 	p->delay_us(READ_TURN_US);
@@ -94,6 +96,7 @@ void rfbus_3w_attach(rfbus_3w_t *b, const rfbus_3w_pins_t *pins)
 	b->bus.read = read_3w;
 	b->bus.delay_ms = pins->delay_ms;
 	b->bus.writes = 0;
+	b->bus.addr_shift = false;
 	b->pins = pins;
 	pins->cs(true);		// lines idle: deselected, clock low
 	pins->clk(false);

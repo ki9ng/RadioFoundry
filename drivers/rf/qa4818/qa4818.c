@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
+// Copyright (c) 2026 KI9NG
 // QA4818N / WX4818N-class transceiver (qa4818.h). The register meanings in the comments are inferred
 //
 #include "qa4818.h"
+#include "qa4818_v2.h"
 #include "rf/subaudio/subaudio.h"
 
 #define MHZ(x)		((uint32_t)(x) * 1000000u)
@@ -161,6 +163,8 @@ uint16_t qa4818_line_drive_word(uint32_t hz, bool wide, uint8_t level)
 
 void qa4818_attach(qa4818_t *c, rfbus_t *bus, bool lo)
 {
+	c->v2 = false;
+	c->v2_51 = false;
 	c->bus = bus;
 	c->lo = lo;
 	c->subband = QA4818_SUBBAND_NONE;
@@ -183,6 +187,10 @@ static void set_subband(qa4818_t *c, uint8_t idx)
 
 void qa4818_tune(qa4818_t *c, uint8_t subband, uint32_t hz)
 {
+	if (c->v2) {
+		qa4818_v2_tune(c, hz);
+		return;
+	}
 	set_subband(c, subband);
 	uint32_t w = qa4818_freq_word(hz);
 	wr(c, QA4818_REG_FREQ_LO, (uint16_t)w);
@@ -212,6 +220,9 @@ static void vco_cal(qa4818_t *c, uint16_t a, uint16_t b, bool settle)
 
 void qa4818_init_lo(qa4818_t *c)
 {
+	if (c->v2) {
+		return;	// the board calls qa4818_v2_init_lo
+	}
 	reset(c);
 	static const rfbus_regval_t p0[] = {
 		{ 0x30, 0x5FE0 }, { 0x34, 0x086F }, { 0x35, 0xF708 }, { 0x40, 0x0000 }, { 0x1B, 0x8200 }, { 0x1F, 0x3EC8 },
@@ -263,6 +274,9 @@ static void path_page1(qa4818_t *c, bool tx, bool digital)
 
 void qa4818_init_trx(qa4818_t *c, uint16_t gpio, uint16_t r49)
 {
+	if (c->v2) {
+		return;	// the board calls qa4818_v2_init_trx
+	}
 	wr(c, QA4818_REG_ENABLE, QA4818_ENABLE_OFF);
 	reset(c);
 	wr(c, 0x10, 0x0038);
@@ -308,6 +322,16 @@ void qa4818_init_trx(qa4818_t *c, uint16_t gpio, uint16_t r49)
 
 void qa4818_enable(qa4818_t *c, uint16_t value)
 {
+	if (c->v2) {
+		if (value == QA4818_ENABLE_OFF) {
+			qa4818_v2_off(c);
+		} else if (value == QA4818_ENABLE_RX) {
+			qa4818_v2_rx_on(c, 0);
+		} else if (c->lo && value == QA4818_ENABLE_LO) {
+			qa4818_v2_lo_on(c);
+		}	// a transceiver's transmit enable: not ported
+		return;
+	}
 	wr(c, QA4818_REG_ENABLE, value);
 }
 
@@ -318,6 +342,10 @@ uint16_t qa4818_af_rx(bool digital, uint32_t hz)
 
 void qa4818_rx_on(qa4818_t *c, bool digital, uint32_t hz)
 {
+	if (c->v2) {
+		qa4818_v2_rx_on(c, hz);
+		return;
+	}
 	wr(c, 0x34, 0x086F);
 	wr(c, 0x35, 0xF208);
 	wr(c, 0x47, qa4818_af_rx(digital, hz));
@@ -331,6 +359,9 @@ void qa4818_rx_on(qa4818_t *c, bool digital, uint32_t hz)
 // the analog value, as on an FM channel). The receiver's output is off the AF for the beep, so DMR receive loses nothing
 void qa4818_beep(qa4818_t *c, uint16_t hz, uint8_t gain, uint16_t af)
 {
+	if (c->v2) {
+		return;	// not ported to the newer chip: leave it alone
+	}
 	bool digital = (af & (uint16_t)~QA4818_AF_INVERT) == QA4818_AF_DMR;
 	if (hz == 0) {
 		wr(c, QA4818_REG_TONE_GEN, 0);
@@ -358,28 +389,46 @@ void qa4818_beep(qa4818_t *c, uint16_t hz, uint8_t gain, uint16_t af)
 
 void qa4818_af_out(qa4818_t *c, uint16_t af)
 {
+	if (c->v2) {
+		return;	// not ported to the newer chip: leave it alone
+	}
 	wr(c, 0x47, af);
 }
 
 void qa4818_tx_on(qa4818_t *c)
 {
+	if (c->v2) {
+		return;	// not ported to the newer chip: leave it alone
+	}
 	wr(c, 0x47, QA4818_AF_VOICE);
 	wr(c, QA4818_REG_ENABLE, QA4818_ENABLE_TX);
 }
 
 void qa4818_lo_on(qa4818_t *c)
 {
+	if (c->v2) {
+		qa4818_v2_lo_on(c);
+		return;
+	}
 	wr(c, QA4818_REG_ENABLE, QA4818_ENABLE_OFF);
 	wr(c, QA4818_REG_ENABLE, QA4818_ENABLE_LO);
 }
 
 void qa4818_out(qa4818_t *c, uint16_t value)
 {
+	if (c->v2) {
+		qa4818_v2_out(c, value);
+		return;
+	}
 	wr(c, 0x28, value);
 }
 
 uint16_t qa4818_reg(qa4818_t *c, uint8_t pg, uint8_t reg, uint16_t val, bool write)
 {
+	if (c->v2) {
+		(void)pg;	// no pages
+		return qa4818_v2_reg(c, reg, val, write);
+	}
 	uint8_t was = c->page;
 	if (pg != was) {
 		page(c, pg);
@@ -399,6 +448,14 @@ uint16_t qa4818_reg(qa4818_t *c, uint8_t pg, uint8_t reg, uint16_t val, bool wri
 
 void qa4818_gpio(qa4818_t *c, uint16_t mask, uint16_t val)
 {
+	if (c->v2) {
+		uint16_t now = (uint16_t)((c->gpio & ~mask) | (val & mask));
+		if (now != c->gpio) {
+			qa4818_v2_gpio(c, c->gpio, now, false);
+			c->gpio = now;
+		}
+		return;
+	}
 	uint16_t g = (uint16_t)((c->gpio & ~mask) | (val & mask));
 	if (g != c->gpio) {
 		c->gpio = g;
@@ -417,6 +474,10 @@ void qa4818_gpio(qa4818_t *c, uint16_t mask, uint16_t val)
 
 void qa4818_path(qa4818_t *c, bool tx, bool digital, bool wide, uint16_t r49)
 {
+	if (c->v2) {
+		qa4818_v2_path(c, tx);
+		return;
+	}
 	if_constants(c, r49);
 	if (digital)
 		wr(c, 0x13, 0x0375);	// the digital path's IF value
@@ -454,6 +515,10 @@ static void channel_mode(qa4818_t *c, bool digital)
 
 void qa4818_rx_setup(qa4818_t *c, bool digital)
 {
+	if (c->v2) {
+		qa4818_v2_rx_setup(c, digital);
+		return;
+	}
 	if (digital) {
 		// 0x18 and page 1 0x17 as the digital TX sets them, on every digital receive too: after an FM
 		// transmission the microphone's values would stay
@@ -478,6 +543,9 @@ void qa4818_rx_setup(qa4818_t *c, bool digital)
 
 void qa4818_gain(qa4818_t *c, uint8_t code)
 {
+	if (c->v2) {
+		return;	// not ported to the newer chip: leave it alone
+	}
 	wr(c, 0x4F, 0x7E2B);
 	wr(c, QA4818_REG_SQ, (uint16_t)(code << 8 | 0xFFu));
 }
@@ -510,6 +578,9 @@ bool qa4818_tone_heard(qa4818_tone_t type, uint16_t flags)
 
 void qa4818_rx_tone(qa4818_t *c, qa4818_tone_t type, uint16_t value)
 {
+	if (c->v2) {
+		return;	// not ported to the newer chip: leave it alone
+	}
 	switch (type) {
 	case QA4818_TONE_CTCSS:
 		wr(c, QA4818_REG_CSS_DETECT, qa4818_ctcss_detect(value));
@@ -534,6 +605,9 @@ void qa4818_rx_tone(qa4818_t *c, qa4818_tone_t type, uint16_t value)
 
 void qa4818_fm_tx(qa4818_t *c, uint32_t hz)
 {
+	if (c->v2) {
+		return;	// not ported to the newer chip: leave it alone
+	}
 	static const rfbus_regval_t t[] = {
 		{ QA4818_REG_PAGE, 1 }, { 0x17, TX_AUDIO_MIC }, { 0x19, 0x7800 }, { 0x22, 0x1B00 }, { 0x1B, TX_PATH_VOICE },
 		{ 0x27, 0x88D3 }, { 0x1E, 0x4494 }, { 0x1F, 0xC1F3 }, { 0x20, 0x22A7 }, { 0x23, 0xD124 }, { 0x24, 0x087F },
@@ -548,6 +622,9 @@ void qa4818_fm_tx(qa4818_t *c, uint32_t hz)
 // The baseband modulates, so no sub-audio and no drive word; the PA level is the board's
 void qa4818_dmr_tx(qa4818_t *c, uint32_t hz)
 {
+	if (c->v2) {
+		return;	// not ported to the newer chip: leave it alone
+	}
 	qa4818_out(c, hz < MHZ(200) ? QA4818_OUT_TX_VHF : QA4818_OUT_TX_UHF);
 	wr(c, 0x18, 0x4125);
 	page(c, 1);
@@ -560,6 +637,9 @@ void qa4818_dmr_tx(qa4818_t *c, uint32_t hz)
 
 void qa4818_tx_tone(qa4818_t *c, qa4818_tone_t type, uint16_t value, uint8_t cal_ctcss, uint8_t cal_dcs)
 {
+	if (c->v2) {
+		return;	// not ported to the newer chip: leave it alone
+	}
 	switch (type) {
 	case QA4818_TONE_CTCSS: {
 		uint16_t w = subaudio_ctcss_word(value, false);
@@ -591,17 +671,26 @@ static void drive(qa4818_t *c, uint16_t r40, uint8_t level)
 
 void qa4818_tx_drive(qa4818_t *c, uint32_t hz, bool wide, uint8_t d, uint8_t level)
 {
+	if (c->v2) {
+		return;	// not ported to the newer chip: leave it alone
+	}
 	audio_plain(c);
 	drive(c, qa4818_drive_word(hz, wide, d), level);
 }
 
 void qa4818_tx_drive_off(qa4818_t *c)
 {
+	if (c->v2) {
+		return;	// not ported to the newer chip: leave it alone
+	}
 	drive(c, 0, 0);
 }
 
 void qa4818_mic_level(qa4818_t *c, uint8_t gain, uint8_t cal)
 {
+	if (c->v2) {
+		return;	// not ported to the newer chip: leave it alone
+	}
 	wr(c, 0x18, (uint16_t)(0x0125u | (uint16_t)(gain & 7u) << 11));
 	page(c, 1);
 	wr(c, 0x17, (uint16_t)(0x0200u | (uint16_t)(cal & 0x3Fu) << 3));
@@ -610,6 +699,9 @@ void qa4818_mic_level(qa4818_t *c, uint8_t gain, uint8_t cal)
 
 void qa4818_tx_aux(qa4818_t *c, bool line, uint16_t r40)
 {
+	if (c->v2) {
+		return;	// not ported to the newer chip: leave it alone
+	}
 	page(c, 1);
 	wr(c, 0x19, 0x7800);
 	page(c, 0);
@@ -627,6 +719,9 @@ void qa4818_tx_aux(qa4818_t *c, bool line, uint16_t r40)
 
 void qa4818_tx_line_digital(qa4818_t *c, uint16_t r40)
 {
+	if (c->v2) {
+		return;	// not ported to the newer chip: leave it alone
+	}
 	qa4818_tx_aux(c, true, r40);
 	page(c, 1);
 	wr(c, 0x1B, P1_1B_DIGITAL);
@@ -635,12 +730,18 @@ void qa4818_tx_line_digital(qa4818_t *c, uint16_t r40)
 
 void qa4818_tone_start(qa4818_t *c, uint16_t hz)
 {
+	if (c->v2) {
+		return;	// not ported to the newer chip: leave it alone
+	}
 	wr(c, QA4818_REG_TONE_FREQ, qa4818_tone_word(hz));
 	wr(c, QA4818_REG_TONE_GEN, TONE_GEN_ON);
 }
 
 void qa4818_tone_gen(qa4818_t *c, bool on)
 {
+	if (c->v2) {
+		return;	// not ported to the newer chip: leave it alone
+	}
 	wr(c, QA4818_REG_TONE_GEN, on ? TONE_GEN_ON : 0);
 }
 
@@ -648,6 +749,9 @@ void qa4818_tone_gen(qa4818_t *c, bool on)
 // audio input pin's values), 0x70, then the drive
 void qa4818_tx_mic(qa4818_t *c, uint16_t r40, uint8_t level, uint8_t gain, uint8_t cal)
 {
+	if (c->v2) {
+		return;	// not ported to the newer chip: leave it alone
+	}
 	page(c, 1);
 	wr(c, 0x1B, TX_PATH_VOICE);
 	page(c, 0);
@@ -658,6 +762,10 @@ void qa4818_tx_mic(qa4818_t *c, uint16_t r40, uint8_t level, uint8_t gain, uint8
 
 void qa4818_status(qa4818_t *c, qa4818_status_t *st)
 {
+	if (c->v2) {
+		qa4818_v2_status(c, st);
+		return;
+	}
 	st->signal = (rfbus_read(c->bus, QA4818_REG_STATUS) & 0x0002u) != 0;
 	st->noise = (uint8_t)(rfbus_read(c->bus, QA4818_REG_NOISE) & 0x7Fu);
 	st->rssi = (uint16_t)(rfbus_read(c->bus, QA4818_REG_RSSI) & 0x1FFu);
@@ -666,11 +774,21 @@ void qa4818_status(qa4818_t *c, qa4818_status_t *st)
 
 void qa4818_carrier(qa4818_t *c, bool *signal, uint16_t *rssi)
 {
+	if (c->v2) {
+		qa4818_status_t st;
+		qa4818_v2_status(c, &st);
+		*signal = st.signal;
+		*rssi = st.rssi;
+		return;
+	}
 	*signal = (rfbus_read(c->bus, QA4818_REG_STATUS) & 0x0002u) != 0;
 	*rssi = (uint16_t)(rfbus_read(c->bus, QA4818_REG_RSSI) & 0x1FFu);
 }
 
 uint16_t qa4818_voice(qa4818_t *c)
 {
+	if (c->v2) {
+		return 0;
+	}
 	return rfbus_read(c->bus, QA4818_REG_VOICE);
 }

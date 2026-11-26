@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
+// Copyright (c) 2026 KI9NG
 // QA4818-class transceiver driver: the pure helpers (frequency word, superhet plan, sub-bands, CTCSS detector
 // thresholds, drive word, RSSI) and the register sequences on a fake register bus
 #include <stdio.h>
 #include <string.h>
 #include "rf/qa4818/qa4818.h"
+#include "rf/qa4818/qa4818_v2.h"
 #include "rf/subaudio/subaudio.h"
 
 static int failures;
@@ -489,6 +491,176 @@ static void test_reg(void)
 	CHECK(f.n == n + 1);
 }
 
+// --- The newer chip in QA4818 sockets (ki9ng fork) ---
+
+// A chip that answers only in its own address format: the QA4818 (ID 0x7813 in 0x00) with addr_shift clear, the newer
+// chip with it set; in the other format a read is noise (0xFFFF) and a write lands nowhere
+typedef struct {
+	rfbus_t bus;
+	bool newer;
+	uint16_t regs[128];
+	int writes;
+	frame_t log[512];
+	int n;
+} chip_sim_t;
+
+static void sim_write(rfbus_t *bus, uint8_t reg, uint16_t val)
+{
+	chip_sim_t *s = (chip_sim_t *)bus;
+	if (bus->addr_shift != s->newer) {
+		return;
+	}
+	s->regs[reg & 0x7F] = val;
+	if (s->n < 512) {
+		s->log[s->n].reg = reg;
+		s->log[s->n].val = val;
+		s->n++;
+	}
+	s->writes++;
+}
+
+static uint16_t sim_read(rfbus_t *bus, uint8_t reg)
+{
+	chip_sim_t *s = (chip_sim_t *)bus;
+	if (bus->addr_shift != s->newer) {
+		return 0xFFFF;
+	}
+	return s->regs[reg & 0x7F];
+}
+
+static void sim_init(chip_sim_t *s, bool newer)
+{
+	memset(s, 0, sizeof(*s));
+	s->bus.write = sim_write;
+	s->bus.read = sim_read;
+	s->bus.delay_ms = fake_delay;
+	s->newer = newer;
+	if (!newer) {
+		s->regs[0x00] = 0x7813;
+	}
+}
+
+static int sim_count(const chip_sim_t *s, uint8_t reg)
+{
+	int k = 0;
+	for (int i = 0; i < s->n; i++) {
+		k += s->log[i].reg == reg;
+	}
+	return k;
+}
+
+static void test_v2_probe(void)
+{
+	chip_sim_t s;
+	qa4818_t c;
+
+	sim_init(&s, false);
+	qa4818_attach(&c, &s.bus, false);
+	CHECK(qa4818_probe(&c));
+	CHECK(!c.v2 && !s.bus.addr_shift);
+
+	sim_init(&s, true);
+	qa4818_attach(&c, &s.bus, false);
+	CHECK(qa4818_probe(&c));
+	CHECK(c.v2 && s.bus.addr_shift);
+	CHECK(s.regs[0x57] == 0xA888 && s.regs[0x50] == 0x0001 && s.regs[0x58] == 0xF1F0);
+
+	// Nothing answers either way: left as a QA4818
+	sim_init(&s, false);
+	s.regs[0x00] = 0;
+	qa4818_attach(&c, &s.bus, false);
+	CHECK(!qa4818_probe(&c));
+	CHECK(!c.v2 && !s.bus.addr_shift);
+}
+
+static void test_v2_ops(void)
+{
+	chip_sim_t s;
+	qa4818_t c;
+	sim_init(&s, true);
+	qa4818_attach(&c, &s.bus, false);
+	CHECK(qa4818_probe(&c) && c.v2);
+
+	// Transceiver init: ends with the receiver off and 0x3C, tuned to 435.125 MHz in Hz
+	s.regs[0x51] = 3;
+	qa4818_v2_init_trx(&c, false);
+	CHECK(c.v2_51);
+	CHECK(s.regs[0x47] == 0x27FE);
+	CHECK(s.regs[0x69] == (435125000u >> 16) && s.regs[0x68] == (435125000u & 0xFFFFu));
+	CHECK(s.regs[0x56] == 0 && s.regs[0x3C] == 0x00FC);
+	CHECK(sim_count(&s, 0x40) == 8 && sim_count(&s, 0x53) >= 8);
+	CHECK(sim_count(&s, 0x7F) == 0);	// no pages on this chip
+
+	// Tune through the common entry: a transceiver gets the frequency alone, an LO its band pair first
+	int n = s.n;
+	qa4818_tune(&c, QA4818_SUBBAND_IF, 49950000u);
+	CHECK(s.n == n + 2);
+	CHECK(s.log[n].reg == 0x69 && s.log[n].val == (49950000u >> 16));
+	CHECK(s.log[n + 1].reg == 0x68 && s.log[n + 1].val == (49950000u & 0xFFFFu));
+	c.lo = true;
+	qa4818_tune(&c, 0, 196470000u);
+	CHECK(s.regs[0x5E] == 0x0468 && s.regs[0x60] == 0x0306);
+	qa4818_tune(&c, 0, 396500000u);
+	CHECK(s.regs[0x5E] == 0x0569 && s.regs[0x60] == 0x0309);
+	c.lo = false;
+
+	// GPIO: one 0x52 write per changed pin, pin << 12 | 0x40 | level
+	c.gpio = 0x0001;
+	n = s.n;
+	qa4818_gpio(&c, 0x0030, 0x0030);
+	CHECK(c.gpio == 0x0031);
+	CHECK(s.n == n + 2);
+	CHECK(s.log[n].reg == 0x52 && s.log[n].val == (4u << 12 | 0x41u));
+	CHECK(s.log[n + 1].reg == 0x52 && s.log[n + 1].val == (5u << 12 | 0x41u));
+	n = s.n;
+	qa4818_gpio(&c, 0x0001, 0);
+	CHECK(s.n == n + 1 && s.log[n].val == 0x0040);
+
+	// Enable / output stage / RX and LO on
+	qa4818_enable(&c, QA4818_ENABLE_RX);
+	CHECK(s.regs[0x56] == 0x0001 && s.regs[0x58] == 0xF1F0 && s.regs[0x60] == 0x0302);
+	qa4818_enable(&c, QA4818_ENABLE_OFF);
+	CHECK(s.regs[0x56] == 0);
+	qa4818_out(&c, QA4818_OUT_RX);
+	CHECK(s.regs[0x5C] == 0);
+	qa4818_out(&c, QA4818_OUT_TX_UHF);
+	CHECK(s.regs[0x5C] == 1);
+	qa4818_lo_on(&c);
+	CHECK(s.regs[0x56] == 0x0006);
+
+	// Status: signal 0x0E bit 14, RSSI 0x02 bits 9:0 at a quarter
+	qa4818_status_t st;
+	s.regs[0x0E] = 0x4000;
+	s.regs[0x02] = 0x0123;
+	qa4818_status(&c, &st);
+	CHECK(st.signal && st.rssi == (0x123u >> 2));
+	s.regs[0x0E] = 0;
+	qa4818_status(&c, &st);
+	CHECK(!st.signal && qa4818_noise(st.noise) > qa4818_noise(8));
+	bool sig;
+	uint16_t rssi;
+	s.regs[0x0E] = 0x4000;
+	qa4818_carrier(&c, &sig, &rssi);
+	CHECK(sig && rssi == (0x123u >> 2));
+
+	// What isn't ported writes nothing (a QA4818 write would land on another register of this chip)
+	n = s.n;
+	qa4818_tx_on(&c);
+	qa4818_beep(&c, 1000, 20, QA4818_AF_VOICE);
+	qa4818_af_out(&c, QA4818_AF_VOICE);
+	qa4818_gain(&c, 0x50);
+	qa4818_rx_tone(&c, QA4818_TONE_CTCSS, 1000);
+	qa4818_enable(&c, QA4818_ENABLE_TX);	// a transceiver: transmit not ported
+	qa4818_init_trx(&c, 0x0001, 0x26AC);
+	qa4818_init_lo(&c);
+	CHECK(s.n == n);
+
+	// The debug link's register access: no pages
+	n = s.n;
+	CHECK(qa4818_reg(&c, 1, 0x29, 0x1234, true) == 0x1234);
+	CHECK(s.n == n + 1 && s.log[n].reg == 0x29);
+}
+
 int main(void)
 {
 	test_pure();
@@ -500,6 +672,8 @@ int main(void)
 	test_status();
 	test_gpio_page();
 	test_reg();
+	test_v2_probe();
+	test_v2_ops();
 
 	if (failures) {
 		printf("qa4818Test: %d failure(s)\n", failures);

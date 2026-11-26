@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
+// Copyright (c) 2026 KI9NG
 // An RF chip's register bus: 8-bit register address, 16-bit values. The chip drivers (BK4819, FD6818, AT1141 and the
 // like) take an rfbus_t and never see the wires; a board gives each chip one, usually an rfbus_3w_t.
 //
@@ -21,6 +22,9 @@ struct rfbus {
 	uint16_t (*read)(rfbus_t *bus, uint8_t reg);
 	void (*delay_ms)(uint32_t ms);	// init and resets only; NULL = no wait
 	uint32_t writes;		// frames written (diagnostics)
+	// The address byte as (reg << 1) | R/W, the R/W flag in bit 0, instead of reg | 0x80 to read (the newer chip in
+	// QA4818 sockets, drivers/rf/qa4818/qa4818_v2.c; ki9ng fork). 3-wire buses only
+	bool addr_shift;
 };
 
 typedef struct {

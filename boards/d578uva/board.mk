@@ -21,6 +21,8 @@ MCU_DEFS   += $(D578UV_DEFS)
 # With make stack-check's overhead and margin that's 882, 782, 540 and 668 words, 0 to 8 bytes to spare
 # The RF chips' 3-wire bus at the 1 us timing (boards/d578uv/radio_d578uv.c, D578UV_BUS_FAST; ki9ng fork)
 MCU_DEFS   += -DD578UV_BUS_FAST=0
+# The PLUS board's receiver IFs (boards/d578uv/radio_d578uv.c IF_A_HZ / IF_B_HZ; ki9ng fork)
+MCU_DEFS   += -DD578UV_IF_A_HZ=49950000u -DD578UV_IF_B_HZ=46350000u
 MCU_DEFS   += -DRADIO_TASK_STACK=882 -DHOSTLINK_TASK_STACK=782 -DUI_TASK_STACK_WORDS=540 -DSTART_TASK_STACK=668
 BOARD_DIRS := boards/d578uva boards/d578uv drivers/display/st7735 drivers/flash/spi_nand drivers/input/quadrature \
               drivers/modem/sct drivers/rf/rfbus drivers/rf/subaudio drivers/rf/qa4818 drivers/gps/nmea_line \

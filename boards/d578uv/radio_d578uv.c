@@ -52,6 +52,7 @@
 #include "audio/miclevel/miclevel.h"
 #endif
 #include "rf/rfbus/rfbus.h"
+#include "rf/qa4818/qa4818_v2.h"
 #include "rf/qa4818/qa4818.h"
 #include "front_io.h"
 #include "pa_gate.h"
@@ -83,8 +84,17 @@
 #define D578UV_LEVEL_IC		1
 #endif
 
-#define IF_A_HZ			38850000u
-#define IF_B_HZ			38550000u
+// The receivers' IFs. 38.85 / 38.55 MHz on the PRO; the PLUS board's filters are at 49.95 MHz (side A) and 46.35 MHz
+// (side B; 49.65 MHz when chip 1 is the newer chip and its 0x51 read 3), as the vendor's 2.08 PLUS firmware tunes them
+// (ki9ng fork; boards/d578uva/board.mk sets the PLUS figures)
+#ifndef D578UV_IF_A_HZ
+#define D578UV_IF_A_HZ		38850000u
+#endif
+#ifndef D578UV_IF_B_HZ
+#define D578UV_IF_B_HZ		38550000u
+#endif
+#define IF_A_HZ			D578UV_IF_A_HZ
+#define IF_B_HZ			((chip_b.v2 && chip_b.v2_51) ? 49650000u : D578UV_IF_B_HZ)
 #define UHF_FROM_HZ		D578UV_UHF_FROM_HZ
 // Chip 0 / 1 register 0x49: 0x26AC on the PRO, 0x29AA on some 578UV units (5). No pin tells the models apart, so
 // the PRO value is used
@@ -163,6 +173,7 @@
 
 static rfbus_3w_t bus_if, bus_lo;
 static qa4818_t chip_if, chip_lo;	// chips 0 and 2
+static bool slot_v2[4];			// the newer chip in socket 0-3 (d578uv_bus_init's probe; ki9ng fork)
 
 // Side B: chips 1 and 3, run by the radio task (the task of the core's tune() calls), for dual watch and the air band
 #define SIDE_B_CHIPS		(CONFIG_DUAL_WATCH || CONFIG_AM_RX)
@@ -402,19 +413,44 @@ void d578uv_bus_init(void)
 	// After a reset in transmit (a crash, the watchdog) the chips keep their last set-up: board_rf_safe takes the PA's
 	// lines but not the bus. Every chip off now, before the slow start-up (the baseband's boot, the NAND); the radio's
 	// init sets them up again
+	// Which chip each socket holds first (ki9ng fork): the AT32 PLUS carries a newer chip with its own address format
+	// and registers (drivers/rf/qa4818/qa4818_v2.c), which the QA4818 writes below would scramble
 	for (uint8_t i = 0; i < 4; i++) {
 		rfbus_3w_t b;
+		qa4818_t q;
 		rfbus_3w_attach(&b, &pins_chip[i]);
-		rfbus_write(&b.bus, QA4818_REG_ENABLE, QA4818_ENABLE_OFF);
+		qa4818_attach(&q, &b.bus, i >= 2);
+		qa4818_probe(&q);
+		slot_v2[i] = q.v2;
+		if (q.v2) {
+			qa4818_v2_off(&q);
+		} else {
+			rfbus_write(&b.bus, QA4818_REG_ENABLE, QA4818_ENABLE_OFF);
+		}
 	}
 	// The RF chips' GPIO set before the baseband's boot, in this order; the boot works only with them (tested on a
-	// radio)
+	// radio). The newer chip: the same pins, one per 0x52 write (chip 1 without bit 7, as the vendor's)
 	static const struct { uint8_t chip, reg; uint16_t v; } stock_gpio[] = {
 		{ 0, 0x26, 0x0000 }, { 0, 0x27, 0x0000 }, { 0, 0x25, 0x0001 },
 		{ 1, 0x26, 0x0000 }, { 1, 0x27, 0x0000 }, { 1, 0x25, 0x0033 }, { 1, 0x25, 0x00B3 },
 		{ 3, 0x26, 0x1111 }, { 3, 0x27, 0x0011 }, { 3, 0x25, 0x0000 },
 	};
+	static const uint16_t v2_gpio[4] = { 0x0001, 0x0033, 0x0000, 0x0000 };
+	for (uint8_t i = 0; i < 4; i++) {
+		if (slot_v2[i] && i != 2) {
+			rfbus_3w_t b;
+			qa4818_t q;
+			rfbus_3w_attach(&b, &pins_chip[i]);
+			b.bus.addr_shift = true;
+			qa4818_attach(&q, &b.bus, i >= 2);
+			q.v2 = true;
+			qa4818_v2_gpio(&q, 0, v2_gpio[i], true);
+		}
+	}
 	for (unsigned i = 0; i < sizeof stock_gpio / sizeof stock_gpio[0]; i++) {
+		if (slot_v2[stock_gpio[i].chip]) {
+			continue;
+		}
 		rfbus_3w_t b;
 		rfbus_3w_attach(&b, &pins_chip[stock_gpio[i].chip]);
 		rfbus_write(&b.bus, stock_gpio[i].reg, stock_gpio[i].v);
@@ -1838,10 +1874,38 @@ static void init(void)
 	qa4818_attach(c3, &b3->bus, true);
 	qa4818_attach(c1, &b1->bus, false);
 	qa4818_attach(&chip_if, &bus_if.bus, false);
-	qa4818_init_lo(&chip_lo);
-	qa4818_init_lo(c3);
-	qa4818_init_trx(c1, GPIO_B_INIT, R49);
-	qa4818_init_trx(&chip_if, GPIO_A_INIT, R49);
+	// The newer chip where the probe found it (d578uv_bus_init): its address format on the bus, its own inits
+	qa4818_t *chips[4] = { &chip_if, c1, &chip_lo, c3 };
+	rfbus_3w_t *buses[4] = { &bus_if, b1, &bus_lo, b3 };
+	for (uint8_t i = 0; i < 4; i++) {
+		chips[i]->v2 = slot_v2[i];
+		buses[i]->bus.addr_shift = slot_v2[i];
+	}
+	bool trx_v2 = slot_v2[0] && slot_v2[1];
+	if (chip_lo.v2) {
+		qa4818_v2_init_lo(&chip_lo, trx_v2);
+	} else {
+		qa4818_init_lo(&chip_lo);
+	}
+	if (c3->v2) {
+		qa4818_v2_init_lo(c3, trx_v2);
+	} else {
+		qa4818_init_lo(c3);
+	}
+	if (c1->v2) {
+		qa4818_v2_init_trx(c1, true);
+		qa4818_v2_gpio(c1, 0, GPIO_B_INIT, true);
+		c1->gpio = GPIO_B_INIT;
+	} else {
+		qa4818_init_trx(c1, GPIO_B_INIT, R49);
+	}
+	if (chip_if.v2) {
+		qa4818_v2_init_trx(&chip_if, false);
+		qa4818_v2_gpio(&chip_if, 0, GPIO_A_INIT, true);
+		chip_if.gpio = GPIO_A_INIT;
+	} else {
+		qa4818_init_trx(&chip_if, GPIO_A_INIT, R49);
+	}
 	// The GPS task may have asked for the module's power before the chip was set up; the fan starts off
 	uint32_t s = bus_lock();
 	chips_ready = true;

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
+// Copyright (c) 2026 KI9NG
 // QA4818N / WX4818N-class VHF/UHF transceiver: chip driver, independent of the board.
 //
 // No data sheet was found. The register use is BK4819-like (frequency in 0x38/0x39, sub-audio in 0x07/0x08/0x51/0x52,
@@ -24,6 +25,8 @@ typedef struct {
 	uint8_t subband;	// last VCO sub-band written, QA4818_SUBBAND_NONE after attach
 	uint16_t gpio;		// shadow of the output register 0x25 (transceivers)
 	uint8_t page;		// the page page() selected last (the register tables end on page 0)
+	bool v2;		// the newer chip in this socket (qa4818_v2.c, ki9ng fork): its own map and address format
+	bool v2_51;		// ... its 0x51 read 3 at init (the vendor's 0x47 and side B IF choice)
 } qa4818_t;
 
 // Registers with a known use
@@ -106,6 +109,9 @@ uint16_t qa4818_line_drive_word(uint32_t hz, bool wide, uint8_t level);
 // ---- Register sequences ----
 
 void qa4818_attach(qa4818_t *c, rfbus_t *bus, bool lo);
+// Which chip answers in the socket (ki9ng fork): the QA4818 by its ID 0x7813 in 0x00, else the newer chip by a 0x57
+// write read back. Sets c->v2 and the bus's address format; false when neither answered (left as a QA4818)
+bool qa4818_probe(qa4818_t *c);
 // Power-on init: reset, constants, VCO calibration at 435.125 MHz (with two 20 ms waits), off
 void qa4818_init_lo(qa4818_t *c);
 // gpio: the output register's initial value. r49: the radio's 0x49 value (models differ)
