@@ -7,10 +7,11 @@
 //   - its own register program for every operation: enable 0x56, output stage 0x5C, GPIO one pin per 0x52 write,
 //     frequency in Hz in 0x69 (high) / 0x68 (low), status 0x0E, RSSI 0x02
 // The values here are the vendor firmware's for this chip (static analysis of AT 2.08, KI9NG 2026-11-26; fork only:
-// docs/CLEANROOM.md keeps it out of RadioFoundry upstream). Receive and plain FM transmit are ported; sub-audio,
-// beeps, the AF selector, DMR and the receive gain are not yet, and their entry points leave the chip alone.
+// docs/CLEANROOM.md keeps it out of RadioFoundry upstream). Receive, FM transmit and transmit sub-audio (CTCSS,
+// DCS) are ported; sub-audio decode, beeps, the AF selector, DMR and the receive gain are not yet, and their entry points leave the chip alone.
 #include "qa4818.h"
 #include "qa4818_v2.h"
+#include "rf/subaudio/subaudio.h"
 
 #define MHZ(x)		((uint32_t)(x) * 1000000u)
 #define INIT_HZ		435125000u	// both inits tune here, as the QA4818's do
@@ -322,6 +323,43 @@ void qa4818_v2_no_tone(qa4818_t *c)
 {
 	wr(c, 0x2D, 0x3205);
 	wr(c, 0x2F, 0x0A0F);
+}
+
+// The CTCSS encoder's word: Hz x 20.97152 (2^21 / 100000), from tenths of a hertz, truncated as the vendor's
+uint16_t qa4818_v2_ctcss_word(uint16_t hz_x10)
+{
+	return (uint16_t)(((uint32_t)hz_x10 * 2097152u) / 1000000u);
+}
+
+// Transmit sub-audio. Register 0x2E takes several fields by its top bits: the tone word (0x0000), its latch (0x2000),
+// the DCS code's two halves (0x8000, 0xA000) and the level (0xC000, written by qa4818_v2_drive after this). DCS
+// inversion is a bit of 0x2D here, not the complemented code
+void qa4818_v2_tx_tone(qa4818_t *c, qa4818_tone_t type, uint16_t value)
+{
+	switch (type) {
+	case QA4818_TONE_CTCSS: {
+		uint16_t w = qa4818_v2_ctcss_word(value);
+		wr(c, 0x2E, w);
+		wr(c, 0x2E, (uint16_t)(w | 0x2000u));
+		wr(c, 0x2D, w < 0x0ACDu ? 0x0215 : 0x3215);
+		wr(c, 0x2F, 0x0A0F);
+		break;
+	}
+	case QA4818_TONE_DCS:
+	case QA4818_TONE_DCS_INV: {
+		uint32_t w = subaudio_dcs_word(value);
+		wr(c, 0x2E, (uint16_t)(0x8000u | (w & 0xFFFu)));
+		wr(c, 0x2E, (uint16_t)(0xA000u | ((w >> 12) & 0x7FFu)));
+		wr(c, 0x2E, 0x0B03);
+		wr(c, 0x2E, 0x2B03);
+		wr(c, 0x2D, type == QA4818_TONE_DCS_INV ? 0x3214 : 0x3294);
+		wr(c, 0x2F, 0x0A0F);
+		break;
+	}
+	default:
+		qa4818_v2_no_tone(c);
+		break;
+	}
 }
 
 // The tone generator off

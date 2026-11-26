@@ -22,6 +22,8 @@ void qa4818_v2_status(qa4818_t *c, qa4818_status_t *st);
 void qa4818_v2_fm_tx(qa4818_t *c, uint32_t hz);
 void qa4818_v2_mic(qa4818_t *c, uint8_t idx);
 void qa4818_v2_no_tone(qa4818_t *c);
+uint16_t qa4818_v2_ctcss_word(uint16_t hz_x10);
+void qa4818_v2_tx_tone(qa4818_t *c, qa4818_tone_t type, uint16_t value);
 void qa4818_v2_tone_off(qa4818_t *c);
 void qa4818_v2_drive(qa4818_t *c, uint16_t drive, uint16_t level);
 void qa4818_v2_drive_off(qa4818_t *c);

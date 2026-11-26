@@ -666,7 +666,25 @@ static void test_v2_ops(void)
 	CHECK(s.regs[0x10] == (0x002Fu | 0xA380u));	// above the table: its last code
 	qa4818_tone_gen(&c, false);
 	CHECK(s.regs[0x16] == 0 && s.regs[0x3F] == 0x3232);
-	qa4818_tx_tone(&c, QA4818_TONE_CTCSS, 1000, 0, 0);	// sub-audio not ported: none
+	// Sub-audio: CTCSS 173.8 Hz (word Hz x 20.97152, truncated: 3644), latched, upper range in 0x2D
+	CHECK(qa4818_v2_ctcss_word(1738) == 3644 && qa4818_v2_ctcss_word(1000) == 2097);
+	n = s.n;
+	qa4818_tx_tone(&c, QA4818_TONE_CTCSS, 1738, 0, 0);
+	CHECK(s.log[n].reg == 0x2E && s.log[n].val == 0x0E3C);
+	CHECK(s.log[n + 1].reg == 0x2E && s.log[n + 1].val == 0x2E3C);
+	CHECK(s.regs[0x2D] == 0x3215 && s.regs[0x2F] == 0x0A0F);
+	qa4818_tx_tone(&c, QA4818_TONE_CTCSS, 1000, 0, 0);	// 100.0 Hz: below 0xACD
+	CHECK(s.regs[0x2E] == (2097u | 0x2000u) && s.regs[0x2D] == 0x0215);
+	// DCS: the code's halves at 0x8000 / 0xA000, then 0x0B03, 0x2B03; inversion by 0x2D alone
+	uint32_t dw = subaudio_dcs_word(023);
+	n = s.n;
+	qa4818_tx_tone(&c, QA4818_TONE_DCS, 023, 0, 0);
+	CHECK(s.log[n].val == (0x8000u | (dw & 0xFFFu)) && s.log[n + 1].val == (0xA000u | ((dw >> 12) & 0x7FFu)));
+	CHECK(s.log[n + 2].val == 0x0B03 && s.log[n + 3].val == 0x2B03 && s.regs[0x2D] == 0x3294);
+	n = s.n;
+	qa4818_tx_tone(&c, QA4818_TONE_DCS_INV, 023, 0, 0);
+	CHECK(s.log[n].val == (0x8000u | (dw & 0xFFFu)) && s.regs[0x2D] == 0x3214);	// same code, inverted by the bit
+	qa4818_tx_tone(&c, QA4818_TONE_NONE, 0, 0, 0);
 	CHECK(s.regs[0x2D] == 0x3205 && s.regs[0x2F] == 0x0A0F);
 	n = s.n;
 	qa4818_tx_drive(&c, 146520000u, true, 0x40, 0x10);	// the board's job on this chip

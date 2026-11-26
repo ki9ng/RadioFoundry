@@ -641,7 +641,9 @@ void qa4818_dmr_tx(qa4818_t *c, uint32_t hz)
 void qa4818_tx_tone(qa4818_t *c, qa4818_tone_t type, uint16_t value, uint8_t cal_ctcss, uint8_t cal_dcs)
 {
 	if (c->v2) {
-		qa4818_v2_no_tone(c);	// CTCSS / DCS not ported: sent without sub-audio
+		(void)cal_ctcss;	// the levels come from the chip's own calibration (the board's qa4818_v2_drive)
+		(void)cal_dcs;
+		qa4818_v2_tx_tone(c, type, value);
 		return;
 	}
 	switch (type) {
