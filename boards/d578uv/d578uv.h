@@ -180,6 +180,7 @@ void d578uv_flash_ext_stats(nand_blocks_stats_t *st);	// the ID database's range
 void d578uv_bt_init(void);
 uint32_t d578uv_bt_scan(void);		// key bits from the module, the probe while nothing has answered
 void d578uv_bt_stats(hal_bt_stats_t *st);
+bool d578uv_bt_power_want(void);	// the module's supply as the Bluetooth start wants it (radio task applies it)
 bool d578uv_bt_linked(void);		// a link is up (radio task)
 #if CONFIG_BT_KISS
 bool d578uv_bt_kiss_taken(void);	// a phone on the SPP server takes the APRS host output

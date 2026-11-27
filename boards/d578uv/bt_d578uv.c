@@ -36,6 +36,9 @@ static const uint8_t bt_wake[] = { 0xEE, 0x01, 0x06 };
 static volatile uint8_t rx_head[BT_HEAD];
 static volatile uint16_t rx_at[BT_HEAD];	// ms after start_ms
 static volatile uint32_t rx_bytes, rx_errs;
+#define BT_POWER_OFF_MS		400u	// the supply off this long at the start, so the timers below run from a power-on
+static volatile bool power_want = true;
+static bool cycled;
 static uint8_t wakes, wakes2;
 static bool bton;
 static bool reported;
@@ -207,6 +210,24 @@ uint32_t d578uv_bt_scan(void)
 	uint32_t events = bt.key_events;
 	uint8_t key = bt.key;
 	NVIC_EnableIRQ(MCU_UART4_IRQn);
+	if (!cycled) {
+		if (power_want) {
+			power_want = false;	// the radio task applies it within a status poll
+			start_ms = now;
+			return 0;
+		}
+		if (now - start_ms < BT_POWER_OFF_MS) {
+			return 0;
+		}
+		power_want = true;
+		cycled = true;
+		NVIC_DisableIRQ(MCU_UART4_IRQn);
+		rx_bytes = 0;
+		rx_errs = 0;
+		NVIC_EnableIRQ(MCU_UART4_IRQn);
+		start_ms = now;		// from here: the power-on
+		dlog("bt: supply cycled, on again");
+	}
 	if (wakes < BT_WAKES && now - start_ms >= BT_WAKE_MS + (uint32_t)wakes * BT_WAKE_GAP_MS) {
 		for (size_t i = 0; i < sizeof(bt_wake); i++) {
 			mcu_uart_put(MCU_UART4, bt_wake[i]);
@@ -301,6 +322,11 @@ void d578uv_bt_stats(hal_bt_stats_t *st)
 
 // The radio powers the module off for a P25 or NXDN transmission (radio_d578uv.c, tx) only while it serves no link:
 // with one up, the key fob or hand mic holding PTT would drop and end the transmission. A single byte read, no lock
+bool d578uv_bt_power_want(void)
+{
+	return power_want;
+}
+
 bool d578uv_bt_linked(void)
 {
 	return bt.links != 0;

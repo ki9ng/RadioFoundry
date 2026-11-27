@@ -732,6 +732,14 @@ static void amp_service(void)
 	if (amp_hang.hanging && (int32_t)(hal_millis() - amp_hang.until) >= 0) {
 		audio_route();
 	}
+#if CONFIG_BT_PTT
+	// The Bluetooth side's power request (d578uv_bt_power_want(), input task): applied here, in the radio task, so
+	// the shift register is only ever written from one task
+	bool want = d578uv_bt_power_want();
+	if (want != ((sr & SR_BOOT) != 0) && !transmitting) {
+		sr_set(want ? SR_BOOT : 0, want ? 0 : SR_BOOT);
+	}
+#endif
 }
 
 static void volume(uint8_t percent)
