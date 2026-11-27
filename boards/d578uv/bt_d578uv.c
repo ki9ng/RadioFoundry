@@ -13,13 +13,28 @@
 #include "mcu_io.h"
 #include "hal_time.h"
 #include "input/bt_at/bt_at.h"
+#include "debuglink/dlog.h"
 
 #if CONFIG_BT_PTT
 
 #define BT_BAUD			115200u
 #define BT_IRQ_PRIORITY		6
-#define BT_PROBES		5u	// 200 ms apart
+#define BT_PROBES		10u	// 200 ms apart, from BT_PROBE_FIRST_MS
 #define BT_PROBE_MS		200u
+// The vendor's start (ki9ng fork, AT-D578UV PLUS): the supply on, 500 ms, then EE 01 06 three times 50 ms apart and
+// 200 ms more before the first AT+VER? (its probe of the APRS board, which on the PLUS sits between the radio and the
+// module). Without it the module never answered here (input.bt_lines 0 on every start). What EE 01 06 does isn't known
+#define BT_WAKE_MS		500u
+#define BT_WAKE_GAP_MS		50u
+#define BT_WAKES		3u
+#define BT_PROBE_FIRST_MS	(BT_WAKE_MS + BT_WAKES * BT_WAKE_GAP_MS + 200u)
+#define BT_REPORT_MS		4000u	// one log line of what came back (bytes, errors, the first bytes)
+static const uint8_t bt_wake[] = { 0xEE, 0x01, 0x06 };
+#define BT_HEAD			24u
+static volatile uint8_t rx_head[BT_HEAD];
+static volatile uint32_t rx_bytes, rx_errs;
+static uint8_t wakes;
+static bool reported;
 #define BT_KEY_MS		150u	// a key event holds its key bit this long, past the core's debounce
 
 static bt_at_t bt;
@@ -136,8 +151,13 @@ void MCU_UART4_HANDLER(void)
 {
 	int32_t c = mcu_uart_take(MCU_UART4);
 	if (c == MCU_UART_ERROR) {
+		rx_errs++;
 		bt_at_error(&bt);
 	} else if (c != MCU_UART_NONE) {
+		if (rx_bytes < BT_HEAD) {
+			rx_head[rx_bytes] = (uint8_t)c;
+		}
+		rx_bytes++;
 		bt_at_byte(&bt, (uint8_t)c);
 	}
 }
@@ -182,7 +202,26 @@ uint32_t d578uv_bt_scan(void)
 	uint32_t events = bt.key_events;
 	uint8_t key = bt.key;
 	NVIC_EnableIRQ(MCU_UART4_IRQn);
-	if (!answered && probes < BT_PROBES && now - start_ms >= (uint32_t)probes * BT_PROBE_MS) {
+	if (wakes < BT_WAKES && now - start_ms >= BT_WAKE_MS + (uint32_t)wakes * BT_WAKE_GAP_MS) {
+		for (size_t i = 0; i < sizeof(bt_wake); i++) {
+			mcu_uart_put(MCU_UART4, bt_wake[i]);
+		}
+		wakes++;
+	}
+	if (!reported && now - start_ms >= BT_REPORT_MS) {
+		reported = true;
+		char hex[BT_HEAD * 2 + 1];
+		uint32_t n = rx_bytes < BT_HEAD ? rx_bytes : BT_HEAD;
+		for (uint32_t i = 0; i < n; i++) {
+			static const char h[] = "0123456789abcdef";
+			hex[2 * i] = h[rx_head[i] >> 4];
+			hex[2 * i + 1] = h[rx_head[i] & 15u];
+		}
+		hex[2 * n] = 0;
+		dlog("bt: %lu bytes, %lu errors, %u probes, lines %lu, first %s", (unsigned long)rx_bytes,
+			(unsigned long)rx_errs, probes, (unsigned long)bt.lines, hex);
+	}
+	if (!answered && probes < BT_PROBES && now - start_ms >= BT_PROBE_FIRST_MS + (uint32_t)probes * BT_PROBE_MS) {
 		for (const char *s = BT_AT_PROBE; *s; s++) {
 			mcu_uart_put(MCU_UART4, (uint8_t)*s);
 		}
