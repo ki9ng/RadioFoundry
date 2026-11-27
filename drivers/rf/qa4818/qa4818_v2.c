@@ -282,16 +282,27 @@ uint16_t qa4818_v2_reg(qa4818_t *c, uint8_t reg, uint16_t val, bool write)
 	return rd(c, reg);
 }
 
-// Status: 0x0E bit 14 is the chip's signal flag; 0x02 bits 9:0 its RSSI, 4 counts a QA4818 count (the vendor's
-// thresholds for it are 4x the QA4818's, so a QA4818 count is half a dB: inferred). No noise register is known: the
-// core's squelch gets a low noise with the signal flag, a high one without
+// Status: 0x0E bit 14 is the chip's signal flag; 0x02 bits 9:0 its RSSI. No noise register is known: the core's
+// squelch gets a low noise with the signal flag, a high one without.
+// The RSSI goes to the QA4818's scale (half dB a count, qa4818_rssi_dbm(): count/2 - 160 dBm) as count/2 - 75: 4 of
+// its counts a dB, the QA4818's measured 2 a dB on a register twice as wide, and its no-signal reading 288-297 at
+// -125 dBm, the QA4818's floor. KI9NG bench (2026-11-26): it tops out at 620 (-42 dBm) with a handheld at a foot or
+// two; at 8 a dB (the earlier reading, count/4) that ceiling was -83 dBm. The slope is inferred, not measured against
+// a known level
+#define V2_RSSI_ZERO	75u
 #define V2_NOISE_SIGNAL	8u
 #define V2_NOISE_NONE	60u
+uint16_t qa4818_v2_rssi(uint16_t r02)
+{
+	uint16_t half = (uint16_t)((r02 & 0x3FFu) >> 1);
+	return half > V2_RSSI_ZERO ? (uint16_t)(half - V2_RSSI_ZERO) : 0u;
+}
+
 void qa4818_v2_status(qa4818_t *c, qa4818_status_t *st)
 {
 	uint16_t s = rd(c, 0x0E);
 	st->signal = (s & 0x4000u) != 0;
-	st->rssi = (uint16_t)((rd(c, 0x02) & 0x3FFu) >> 2);
+	st->rssi = qa4818_v2_rssi(rd(c, 0x02));
 	st->noise = st->signal ? V2_NOISE_SIGNAL : V2_NOISE_NONE;
 	st->tone_flags = 0;
 }

@@ -628,12 +628,12 @@ static void test_v2_ops(void)
 	qa4818_lo_on(&c);
 	CHECK(s.regs[0x56] == 0x0006);
 
-	// Status: signal 0x0E bit 14, RSSI 0x02 bits 9:0 at a quarter
+	// Status: signal 0x0E bit 14, RSSI 0x02 bits 9:0 on the QA4818's scale (count/2 - 75)
 	qa4818_status_t st;
 	s.regs[0x0E] = 0x4000;
 	s.regs[0x02] = 0x0123;
 	qa4818_status(&c, &st);
-	CHECK(st.signal && st.rssi == (0x123u >> 2));
+	CHECK(st.signal && st.rssi == (0x123u >> 1) - 75u);
 	s.regs[0x0E] = 0;
 	qa4818_status(&c, &st);
 	CHECK(!st.signal && qa4818_noise(st.noise) > qa4818_noise(8));
@@ -641,7 +641,10 @@ static void test_v2_ops(void)
 	uint16_t rssi;
 	s.regs[0x0E] = 0x4000;
 	qa4818_carrier(&c, &sig, &rssi);
-	CHECK(sig && rssi == (0x123u >> 2));
+	CHECK(sig && rssi == (0x123u >> 1) - 75u);
+	CHECK(qa4818_rssi_dbm(qa4818_v2_rssi(290)) == -125);	// the no-signal reading
+	CHECK(qa4818_rssi_dbm(qa4818_v2_rssi(620)) == -43);	// its ceiling
+	CHECK(qa4818_v2_rssi(100) == 0 && qa4818_v2_rssi(0xFC00u | 290u) == 70u);
 
 	// What isn't ported writes nothing (a QA4818 write would land on another register of this chip)
 	n = s.n;

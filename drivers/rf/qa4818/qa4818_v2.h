@@ -17,6 +17,8 @@ void qa4818_v2_out(qa4818_t *c, uint16_t value);
 void qa4818_v2_rx_setup(qa4818_t *c, bool digital);
 void qa4818_v2_gpio(qa4818_t *c, uint16_t old, uint16_t now, bool all);
 uint16_t qa4818_v2_reg(qa4818_t *c, uint8_t reg, uint16_t val, bool write);
+// 0x02's RSSI reading on the QA4818's scale (qa4818_rssi_dbm())
+uint16_t qa4818_v2_rssi(uint16_t r02);
 void qa4818_v2_status(qa4818_t *c, qa4818_status_t *st);
 // FM transmit
 void qa4818_v2_fm_tx(qa4818_t *c, uint32_t hz);
