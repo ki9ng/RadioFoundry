@@ -4980,6 +4980,16 @@ static void rx2_aprs_service(radio_sm_t *sm, uint32_t now_ms)
 		sm->rx2_bg_ms = now_ms;
 		sm->rx2_bg = r->tune(&t);	// the same settings again send nothing
 	}
+	if (sm->rx2_bg) {
+		// Its poll, as dual watch's rx2_service runs it: a board's second receiver follows its squelch and knob in
+		// status() (the AT-D578UV's side B, which feeds the APRS board only with its squelch open)
+		rx2_status_t st;
+		r->status(&st);
+		if (!st.up) {
+			sm->rx2_bg = false;	// gone: tuned again at the next refresh
+			sm->rx2_bg_ms = now_ms;
+		}
+	}
 	bool aprs = sm->rx2_bg || (sm->rx2_on && hz != 0 && sm->rx2_hz == hz);
 	if (r->aprs != NULL && sm->rx2_aprs_out != (int8_t)aprs) {
 		sm->rx2_aprs_out = (int8_t)aprs;
