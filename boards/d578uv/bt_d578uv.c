@@ -78,7 +78,9 @@ static uint8_t krx[KISS_RX_RING];
 static volatile uint8_t krx_head, krx_tail;
 static kiss_dec_t kdec;
 static uint8_t ktx[KISS_CHUNK];
-static uint32_t ktx_ms, ktx_replies, krx_ms;
+static uint32_t ktx_ms, ktx_replies;
+static volatile uint32_t krx_ms;	// when the phone last sent a byte (valid once krx_seen)
+static volatile bool krx_seen;
 static bool ktx_wait;
 static uint32_t k_in, k_drop, k_out, k_out_bytes, k_timeouts;
 
@@ -162,8 +164,9 @@ static void kiss_sink(uint8_t c)
 // KISS setting is on. Called from the input task and from the host link task: single word reads only
 bool d578uv_bt_kiss_taken(void)
 {
+	// krx_ms is the scan's start time, which can be a millisecond behind hal_millis() but never ahead of it
 	uint32_t seen = krx_ms;
-	bool phone = bt.links != 0 || (seen != 0 && hal_millis() - seen < KISS_HOLD_MS);
+	bool phone = bt.links != 0 || (krx_seen && hal_millis() - seen < KISS_HOLD_MS);
 	return bt.present && phone && aprs_host_enabled();
 }
 
@@ -180,7 +183,8 @@ static void kiss_pump(uint32_t now)
 	for (unsigned i = 0; i < KISS_RX_PER_SCAN && krx_tail != krx_head; i++) {
 		uint8_t c = krx[krx_tail];
 		krx_tail = (uint8_t)((krx_tail + 1u) & (KISS_RX_RING - 1u));
-		krx_ms = now | 1u;
+		krx_ms = now;	// not now | 1: one ahead of hal_millis() read as 49 days old, and the output flickered off
+		krx_seen = true;
 		size_t m = kiss_dec_byte(&kdec, c);
 		// Port 0 data frames only, straight to the engine: the host port's other frames (SetHardware NMEA and
 		// APRS-IS lines) aren't a phone's, and the NMEA parser would take the input task past its stack
