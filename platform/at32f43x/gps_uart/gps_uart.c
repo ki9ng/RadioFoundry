@@ -123,6 +123,9 @@ static void sentence(const char *s, uint8_t len, uint32_t now_ms)
 	}
 #if CONFIG_GPS
 	position_nmea(s, len, true, now_ms);
+	if (cfg->sentence != NULL) {
+		cfg->sentence(s, len, now_ms);
+	}
 #else
 	(void)s;
 	(void)len;

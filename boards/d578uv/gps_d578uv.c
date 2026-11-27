@@ -39,6 +39,9 @@ static const mcu_gps_cfg_t gps = {
 	.power = d578uv_gps_power,
 	.tx_port = PORT_OF(PIN_GPS_TX), .tx_pin = MASK_OF(PIN_GPS_TX),
 	.setup_n = sizeof setup / sizeof setup[0], .setup = setup,
+#if D578UV_BT_GPS
+	.sentence = d578uv_bt_gps_sentence,
+#endif
 };
 
 void MCU_USART2_HANDLER(void)

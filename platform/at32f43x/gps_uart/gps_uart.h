@@ -37,6 +37,9 @@ typedef struct {
 	uint16_t tx_pin;
 	uint8_t setup_n;		// entries in setup; 0 = receive only
 	const gps_setup_t *setup;
+	// optional, task context: every valid sentence as it came ("$...*hh", no CR / LF), after the position source
+	// had it; NULL = none (ki9ng fork: the AT-D578UV's Bluetooth GPS output)
+	void (*sentence)(const char *s, uint8_t len, uint32_t now_ms);
 } at32_gps_cfg_t;
 
 // Start listening (from board_init). cfg stays valid

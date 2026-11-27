@@ -196,6 +196,12 @@ static inline void d578uv_bt_off(void)
 }
 #endif
 
+// The board GPS's sentences out over Bluetooth KISS to a host that asks for them (bt_d578uv.c, ki9ng fork)
+#define D578UV_BT_GPS	(CONFIG_BT_PTT && CONFIG_BT_KISS && CONFIG_GPS)
+#if D578UV_BT_GPS
+void d578uv_bt_gps_sentence(const char *s, uint8_t len, uint32_t now_ms);	// GPS task: one valid sentence
+#endif
+
 // --- GPS (gps_d578uv.c) ---
 // Start listening for the module (board_init); the platform's receiver (gps_uart.h) does the rest
 void d578uv_gps_init(void);

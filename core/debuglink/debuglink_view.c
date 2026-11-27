@@ -442,6 +442,8 @@ static void link_section(dl_text_t *t)
 			(unsigned)bt.kiss_taken, (unsigned)bt.kiss_raw, (unsigned)bt.kiss_in, (unsigned)bt.kiss_drop);
 		dl_text(t, "input.bt_kiss_out=%u\ninput.bt_kiss_out_bytes=%u\ninput.bt_kiss_timeouts=%u\n",
 			(unsigned)bt.kiss_out, (unsigned)bt.kiss_out_bytes, (unsigned)bt.kiss_timeouts);
+		dl_text(t, "input.bt_kiss_gps_want=%u\ninput.bt_kiss_gps_out=%u\n", (unsigned)bt.kiss_gps_want,
+			(unsigned)bt.kiss_gps_out);
 #endif
 	}
 	dl_text(t, "input.long_ms=%u\ninput.ptt_downs=%u\n", (unsigned)input_long_ms(), (unsigned)input_ptt_downs());

@@ -111,6 +111,8 @@ typedef struct {
 	uint32_t kiss_out_bytes;	// KISS bytes in them
 	uint32_t oks, errs;	// the module's OK and ERR replies
 	uint32_t kiss_timeouts;	// sends that got no reply in time
+	bool kiss_gps_want;	// the host asked for the GPS sentences (ki9ng fork)
+	uint32_t kiss_gps_out;	// GPS sentences sent to it
 } hal_bt_stats_t;
 
 typedef struct {

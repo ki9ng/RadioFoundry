@@ -59,6 +59,7 @@ static uint8_t probes, key_bit_held = 0xFF;
 #include "aprs/aprs.h"
 #include "aprs/aprs_host.h"
 #include "aprs/kiss.h"
+#include <string.h>
 
 // KISS over the module's SPP server (RFCOMM channel 2), for APRSdroid (ki9ng fork). Wire format, from the vendor
 // firmware's send path (wiki radio/anytone-d578/d578-kiss-tnc): the radio writes "AT+ADATA=01,LLL" CR LF, LLL bytes
@@ -80,6 +81,70 @@ static uint8_t ktx[KISS_CHUNK];
 static uint32_t ktx_ms, ktx_replies, krx_ms;
 static bool ktx_wait;
 static uint32_t k_in, k_drop, k_out, k_out_bytes, k_timeouts;
+
+#if D578UV_BT_GPS
+// GPS out (ki9ng fork): a host that sends SetHardware 'P' 1 gets the board GPS's RMC and GGA sentences as the module
+// sent them (one fix a second, PCAS02 in gps_d578uv.c), each in a SetHardware 'N' frame, while it holds the output.
+// 'P' 0, or the output going back to USB, stops it, so a host that never asks (APRSdroid) never sees one. The GPS task
+// writes the newest sentence of each kind, the input task takes them: interrupts off for the copies (under 200 bytes)
+#define KISS_TAG_GPS_OUT	'P'
+#define GPS_OUT_LINE		88u	// NMEA_LINE_MAX; a longer sentence is skipped
+_Static_assert(2u * (GPS_OUT_LINE + 4u) <= KISS_CHUNK, "both GPS frames must fit one AT+ADATA send");
+static char gps_line[2][GPS_OUT_LINE];	// RMC, GGA
+static volatile uint8_t gps_len[2];	// 0: nothing new
+static volatile bool gps_want;
+static uint32_t k_gps_out;
+
+void d578uv_bt_gps_sentence(const char *s, uint8_t len, uint32_t now_ms)
+{
+	(void)now_ms;
+	if (!gps_want || len < 7u || len > GPS_OUT_LINE || s[0] != '$') {
+		return;
+	}
+	uint8_t k;
+	if (memcmp(s + 3, "RMC,", 4) == 0) {
+		k = 0;
+	} else if (memcmp(s + 3, "GGA,", 4) == 0) {
+		k = 1;
+	} else {
+		return;
+	}
+	for (uint8_t i = 0; i < len; i++) {
+		uint8_t c = (uint8_t)s[i];
+		if (c < 0x20u || c > 0x7Eu) {
+			return;		// printable only: no FEND or FESC inside the frame
+		}
+	}
+	uint32_t pm = __get_PRIMASK();
+	__disable_irq();
+	memcpy(gps_line[k], s, len);
+	gps_len[k] = len;
+	__set_PRIMASK(pm);
+}
+
+// The new sentences as 'N' frames into out (room for 2 * (GPS_OUT_LINE + 4)); 0 when there are none
+static size_t gps_take(uint8_t *out)
+{
+	size_t n = 0;
+	uint32_t pm = __get_PRIMASK();
+	__disable_irq();
+	for (unsigned k = 0; k < 2u; k++) {
+		uint8_t m = gps_len[k];
+		if (m != 0) {
+			out[n++] = KISS_FEND;
+			out[n++] = KISS_CMD_SETHW;
+			out[n++] = KISS_TAG_NMEA;
+			memcpy(out + n, gps_line[k], m);
+			n += m;
+			out[n++] = KISS_FEND;
+			gps_len[k] = 0;
+			k_gps_out++;
+		}
+	}
+	__set_PRIMASK(pm);
+	return n;
+}
+#endif
 
 // UART interrupt: one raw payload byte
 static void kiss_sink(uint8_t c)
@@ -123,9 +188,19 @@ static void kiss_pump(uint32_t now)
 			k_in++;
 			aprs_host_frame(kdec.buf + 1, m - 1u, now);
 		}
+#if D578UV_BT_GPS
+		if (m == 3u && kdec.buf[0] == KISS_CMD_SETHW && kdec.buf[1] == KISS_TAG_GPS_OUT) {
+			gps_want = kdec.buf[2] != 0;
+		}
+#endif
 	}
 	if (!d578uv_bt_kiss_taken()) {
 		ktx_wait = false;
+#if D578UV_BT_GPS
+		gps_want = false;	// a new host asks again
+		gps_len[0] = 0;
+		gps_len[1] = 0;
+#endif
 		return;
 	}
 	uint32_t replies = bt.oks + bt.errs;
@@ -142,7 +217,13 @@ static void kiss_pump(uint32_t now)
 	if (now - ktx_ms < KISS_GAP_MS) {
 		return;
 	}
-	size_t n = aprs_host_output(ktx, sizeof(ktx));
+	size_t n = 0;
+#if D578UV_BT_GPS
+	n = gps_take(ktx);	// at most twice a second: the APRS output keeps the other sends
+#endif
+	if (n == 0) {
+		n = aprs_host_output(ktx, sizeof(ktx));
+	}
 	if (n == 0) {
 		return;
 	}
@@ -344,6 +425,10 @@ void d578uv_bt_stats(hal_bt_stats_t *st)
 	st->kiss_out = k_out;
 	st->kiss_out_bytes = k_out_bytes;
 	st->kiss_timeouts = k_timeouts;
+#if D578UV_BT_GPS
+	st->kiss_gps_want = gps_want;
+	st->kiss_gps_out = k_gps_out;
+#endif
 #endif
 }
 
