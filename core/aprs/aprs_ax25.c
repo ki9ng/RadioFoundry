@@ -887,6 +887,25 @@ uint32_t aprs_mute_hz(void)
 	return aprs_s.cfg.mute ? aprs_cfg_freq(&aprs_s.cfg) : 0u;
 }
 
+// A hardware decoder's frame that we transmitted ourselves: while that transmission runs or ECHO_MS after it, by FCS
+#define ECHO_MS		5000u
+static bool own_echo(const uint8_t *frame, uint16_t n, uint32_t now_ms)
+{
+	uint16_t fcs = ax25_fcs(frame, n);
+	bool echo = false;
+	LOCK();
+	if (aprs_s.echo_n != 0 && (aprs_s.taken != 0 || now_ms - aprs_s.echo_ms < ECHO_MS)) {
+		for (uint8_t i = 0; i < aprs_s.echo_n; i++) {
+			echo = echo || aprs_s.echo_fcs[i] == fcs;
+		}
+	}
+	if (echo) {
+		aprs_s.v.rx_echo++;
+	}
+	UNLOCK();
+	return echo;
+}
+
 // The receive path: on while receiving FM with the setting on (radio task, outside the lock)
 void aprs_ax25_rx_service(const aprs_radio_t *r, uint32_t now_ms)
 {
@@ -894,7 +913,7 @@ void aprs_ax25_rx_service(const aprs_radio_t *r, uint32_t now_ms)
 	if (h != NULL && h->rx_frame != NULL && aprs_s.cfg.rx_on) {
 		const uint8_t *hw = NULL;
 		uint16_t n = h->rx_frame(&hw);
-		if (n != 0 && hw != NULL) {
+		if (n != 0 && hw != NULL && !own_echo(hw, n, now_ms)) {
 			aprs_rx_frame(hw, n, now_ms);
 		}
 	}
@@ -1009,6 +1028,12 @@ bool aprs_rf_take(aprs_rf_job_t *job, uint32_t now_ms)
 	}
 	hdlc_enc_flags(&e, TAIL_FLAGS - 1u);	// room checked above
 	aprs_s.taken = n;
+#if CONFIG_APRS_RX
+	for (uint8_t i = 0; i < n && i < QUEUE_LEN; i++) {
+		aprs_s.echo_fcs[i] = ax25_fcs(aprs_s.q[i].data, aprs_s.q[i].len);
+	}
+	aprs_s.echo_n = n < QUEUE_LEN ? n : QUEUE_LEN;
+#endif
 	job->hz = aprs_cfg_freq(&aprs_s.cfg);
 	job->narrow = aprs_s.cfg.narrow;
 	job->level = aprs_s.cfg.level;
@@ -1024,6 +1049,9 @@ void aprs_rf_done(aprs_rf_result_t r, uint32_t now_ms)
 {
 	LOCK();
 	aprs_s.now = now_ms;
+#if CONFIG_APRS_RX
+	aprs_s.echo_ms = now_ms;
+#endif
 	if (r == APRS_RF_SENT) {
 		queue_drop(aprs_s.taken);
 		aprs_s.v.rf_sent++;

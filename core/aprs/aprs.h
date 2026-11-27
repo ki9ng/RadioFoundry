@@ -116,6 +116,7 @@ typedef struct {
 	uint8_t rf_fail;	// aprs_rf_result_t of the last failed one (APRS_RF_SENT: none yet)
 	uint32_t dmr_sent, dmr_failed;
 	uint32_t rx_frames, rx_bad;	// frames decoded, rejected (RX builds)
+	uint32_t rx_echo;	// our own transmission handed back by a hardware decoder, dropped
 	uint32_t host_in, host_out, host_dropped;	// KISS frames from / to the host, host frames refused
 	uint32_t igated, is_to_rf, digi_sent;
 	uint8_t stations, messages, unread;

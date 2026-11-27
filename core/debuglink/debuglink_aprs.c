@@ -84,6 +84,7 @@ void debuglink_view_aprs(uint8_t part, dl_text_t *t)
 	dl_text(t, "aprs.rf_sent=%u\naprs.rf_failed=%u\naprs.rf_fail=%s\naprs.rf_busy=%u\naprs.dmr_sent=%u\n"
 		"aprs.dmr_failed=%u\n", (unsigned)v.rf_sent, (unsigned)v.rf_failed, word(v.rf_fail, fails, 6),
 		(unsigned)v.rf_busy, (unsigned)v.dmr_sent, (unsigned)v.dmr_failed);
+	dl_text(t, "aprs.rx_echo=%u\n", (unsigned)v.rx_echo);
 	dl_text(t, "aprs.rx_frames=%u\naprs.rx_bad=%u\naprs.host_in=%u\naprs.host_out=%u\naprs.host_dropped=%u\n",
 		(unsigned)v.rx_frames, (unsigned)v.rx_bad, (unsigned)v.host_in, (unsigned)v.host_out,
 		(unsigned)v.host_dropped);

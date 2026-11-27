@@ -50,6 +50,13 @@ typedef struct {
 	qframe_t q[QUEUE_LEN];
 	uint8_t qn;
 	uint8_t taken;		// frames in the transmission under way
+#if CONFIG_APRS_RX
+	// A hardware decoder that hears our own transmission (the AT-D578UV PLUS APRS board) hands its frames back: the
+	// last transmission's frames by FCS, so the rx_frame path drops those exact copies (a digipeated copy differs)
+	uint16_t echo_fcs[QUEUE_LEN];
+	uint8_t echo_n;
+	uint32_t echo_ms;	// when that transmission ended (while it runs, taken != 0)
+#endif
 	uint32_t rf_next_ms;	// no transmission before
 	uint8_t tones[TONES_BYTES];
 	struct {

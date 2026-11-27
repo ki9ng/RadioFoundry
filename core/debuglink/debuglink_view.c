@@ -386,6 +386,8 @@ static void bt_section(dl_text_t *t)
 			(unsigned)bt.kiss_out, (unsigned)bt.kiss_out_bytes, (unsigned)bt.kiss_timeouts);
 		dl_text(t, "input.bt_kiss_gps_want=%u\ninput.bt_kiss_gps_out=%u\n", (unsigned)bt.kiss_gps_want,
 			(unsigned)bt.kiss_gps_out);
+		dl_text(t, "input.bt_kiss_link=%u\ninput.bt_kiss_probes=%u\n", (unsigned)bt.kiss_link,
+			(unsigned)bt.kiss_probes);
 #endif
 		dl_text(t, "input.bt_aprs_frames=%u\ninput.bt_aprs_ok=%u\ninput.bt_aprs_bad=%u\ninput.bt_aprs_busy=%u\n"
 			"input.bt_aprs_long=%u\n", (unsigned)bt.aprs_frames, (unsigned)bt.aprs_ok, (unsigned)bt.aprs_bad,

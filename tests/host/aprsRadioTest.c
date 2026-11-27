@@ -1943,6 +1943,70 @@ static uint16_t b_rx_read(int16_t *buf, uint16_t max)
 	return k;
 }
 
+// A hardware decoder (rx_frame) that hears our own transmission hands the frame back: dropped by FCS while the
+// transmission runs and for ECHO_MS after; the same frame later, and a digipeated copy at once, still come through
+static uint8_t hwf[AX25_FRAME_MAX];
+static uint16_t hwn;
+static uint16_t h_rx_frame(const uint8_t **frame)
+{
+	uint16_t n = hwn;
+	hwn = 0;
+	*frame = hwf;
+	return n;
+}
+
+static void hw_give(const char *tnc2)
+{
+	ax25_frame_t f;
+	CHECK(ax25_from_tnc2(tnc2, strlen(tnc2), &f));
+	f.dst.h = true;
+	hwn = (uint16_t)ax25_encode(&f, hwf, sizeof(hwf));
+	CHECK(hwn != 0);
+}
+
+static void test_rx_hw_echo(void)
+{
+	hal_afsk_t saved = fake_afsk;
+	fake_afsk.rx_frame = h_rx_frame;
+	hwn = 0;
+	reset();
+	aprs_set_test_call("q1tst");
+	configure(60, false);
+	aprs_cfg_t c;
+	aprs_get_cfg(&c);
+	c.rx_on = true;
+	aprs_set_cfg(&c, now);
+	aprs_get_cfg(&c);
+	CHECK(c.rx_on);
+	CHECK(wait_start(1, 65000));
+	CHECK(nframes == 1);
+	char own[200];
+	snprintf(own, sizeof(own), "%s", frames[0]);
+	hw_give(own);		// heard while it goes out
+	wait_idle();
+	run(200);
+	aprs_view_t v;
+	aprs_get_view(&v);
+	CHECK(v.rf_sent == 1 && v.rx_echo == 1 && v.rx_frames == 0);
+	hw_give(own);		// and just after
+	run(1000);
+	aprs_get_view(&v);
+	CHECK(v.rx_echo == 2 && v.rx_frames == 0);
+	// A digipeater's copy (WIDE1-1 used up) is a different frame: through, at once
+	const char *digi = "Q1TST-7>" APRS_TOCALL ",Q1DIG*,WIDE2-1:!4903.50N/07201.75W[RadioFoundry test";
+	hw_give(digi);
+	run(200);
+	aprs_get_view(&v);
+	CHECK(v.rx_echo == 2 && v.rx_frames == 1);
+	// The very same frame past ECHO_MS: a real reception
+	run(6000);
+	hw_give(own);
+	run(200);
+	aprs_get_view(&v);
+	CHECK(v.rx_echo == 2 && v.rx_frames == 2);
+	fake_afsk = saved;
+}
+
 static void test_rx_board_only(void)
 {
 	hal_afsk_t saved = fake_afsk;
@@ -2071,6 +2135,7 @@ int main(void)
 	test_rx_stream();
 	test_rx_release_on_retune();
 	test_mute();
+	test_rx_hw_echo();
 	test_rx_board_only();
 	test_station_lookup();
 	test_station_range();

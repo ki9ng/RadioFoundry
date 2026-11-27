@@ -111,6 +111,8 @@ typedef struct {
 	uint32_t kiss_out_bytes;	// KISS bytes in them
 	uint32_t oks, errs;	// the module's OK and ERR replies
 	uint32_t kiss_timeouts;	// sends that got no reply in time
+	bool kiss_link;		// the module took the last send: a phone is on the SPP link (ki9ng fork)
+	uint32_t kiss_probes;	// lone-FEND sends that look for one
 	bool kiss_gps_want;	// the host asked for the GPS sentences (ki9ng fork)
 	// The APRS add-on board's decoded frames (ki9ng fork): taken by the parser, CRC good, CRC bad or too short,
 	// dropped while one waited, dropped as too long

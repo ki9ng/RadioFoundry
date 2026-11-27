@@ -126,15 +126,23 @@ uint16_t d578uv_bt_aprs_frame(const uint8_t **frame)
 #define KISS_GAP_MS		30u	// between sends (the vendor firmware waits 30 of its ticks)
 #define KISS_REPLY_MS		500u	// a send with no OK or ERR by then is given up on
 #define KISS_HOLD_MS		600000u	// a phone that sent KISS keeps the output this long, link count or not
+// The module says nothing when a phone opens or closes the SPP link (no +CONN or +DISC for it, measured), but it
+// answers an AT+ADATA send with OK only while a phone is there: with no link the send gets no reply. So the radio
+// probes with a lone FEND (every KISS decoder skips it): every KISS_PROBE_MS while no phone is known, every
+// KISS_IDLE_MS while one is and nothing else went to it. An OK is a phone; a timeout or ERR is none
+#define KISS_PROBE_MS		5000u
+#define KISS_IDLE_MS		20000u
 
 static uint8_t krx[KISS_RX_RING];
 static volatile uint8_t krx_head, krx_tail;
 static kiss_dec_t kdec;
 static uint8_t ktx[KISS_CHUNK];
-static uint32_t ktx_ms, ktx_replies;
+static uint32_t ktx_ms;
 static volatile uint32_t krx_ms;	// when the phone last sent a byte (valid once krx_seen)
 static volatile bool krx_seen;
 static bool ktx_wait;
+static bool klink;		// the module took our last send (OK): a phone is on the SPP link
+static uint32_t ktx_oks, ktx_errs, k_probes;
 static uint32_t k_in, k_drop, k_out, k_out_bytes, k_timeouts;
 
 #if D578UV_BT_GPS
@@ -148,6 +156,8 @@ _Static_assert(2u * (GPS_OUT_LINE + 4u) <= KISS_CHUNK, "both GPS frames must fit
 static char gps_line[2][GPS_OUT_LINE];	// RMC, GGA
 static volatile uint8_t gps_len[2];	// 0: nothing new
 static volatile bool gps_want;
+#define GPS_WANT_MS		660000u	// a request lapses unless renewed (the laptop bridge renews it every 300 s)
+static uint32_t gps_want_ms;
 static uint32_t k_gps_out;
 
 void d578uv_bt_gps_sentence(const char *s, uint8_t len, uint32_t now_ms)
@@ -219,7 +229,7 @@ bool d578uv_bt_kiss_taken(void)
 {
 	// krx_ms is the scan's start time, which can be a millisecond behind hal_millis() but never ahead of it
 	uint32_t seen = krx_ms;
-	bool phone = bt.links != 0 || (krx_seen && hal_millis() - seen < KISS_HOLD_MS);
+	bool phone = bt.links != 0 || klink || (krx_seen && hal_millis() - seen < KISS_HOLD_MS);
 	return bt.present && phone && aprs_host_enabled();
 }
 
@@ -248,44 +258,59 @@ static void kiss_pump(uint32_t now)
 #if D578UV_BT_GPS
 		if (m == 3u && kdec.buf[0] == KISS_CMD_SETHW && kdec.buf[1] == KISS_TAG_GPS_OUT) {
 			gps_want = kdec.buf[2] != 0;
+			gps_want_ms = now;
 		}
 #endif
 	}
-	if (!d578uv_bt_kiss_taken()) {
+	if (!bt.present || !aprs_host_enabled()) {
 		ktx_wait = false;
-#if D578UV_BT_GPS
-		gps_want = false;	// a new host asks again
-		gps_len[0] = 0;
-		gps_len[1] = 0;
-#endif
-		return;
-	}
-	uint32_t replies = bt.oks + bt.errs;
-	if (ktx_wait) {
-		if (replies != ktx_replies) {
+		klink = false;
+	} else if (ktx_wait) {
+		if (bt.oks != ktx_oks) {
 			ktx_wait = false;
-		} else if (now - ktx_ms >= KISS_REPLY_MS) {
+			klink = true;
+		} else if (bt.errs != ktx_errs || now - ktx_ms >= KISS_REPLY_MS) {
+			if (bt.errs == ktx_errs) {
+				k_timeouts++;
+			}
 			ktx_wait = false;
-			k_timeouts++;
+			klink = false;	// no phone there: the output goes back to USB until a probe finds one
+			krx_seen = false;
 		} else {
 			return;
 		}
 	}
-	if (now - ktx_ms < KISS_GAP_MS) {
+	bool taken = d578uv_bt_kiss_taken();
+#if D578UV_BT_GPS
+	if (!taken || (gps_want && now - gps_want_ms >= GPS_WANT_MS)) {
+		gps_want = false;	// a new host asks again
+		gps_len[0] = 0;
+		gps_len[1] = 0;
+	}
+#endif
+	if (!bt.present || !aprs_host_enabled() || now - ktx_ms < KISS_GAP_MS) {
 		return;
 	}
 	size_t n = 0;
+	if (taken) {
 #if D578UV_BT_GPS
-	n = gps_take(ktx);	// at most twice a second: the APRS output keeps the other sends
+		n = gps_take(ktx);	// at most twice a second: the APRS output keeps the other sends
 #endif
-	if (n == 0) {
-		n = aprs_host_output(ktx, sizeof(ktx));
+		if (n == 0) {
+			n = aprs_host_output(ktx, sizeof(ktx));
+		}
 	}
 	if (n == 0) {
-		return;
+		if (now - ktx_ms < (taken ? KISS_IDLE_MS : KISS_PROBE_MS)) {
+			return;
+		}
+		ktx[0] = KISS_FEND;	// the probe
+		n = 1;
+		k_probes++;
 	}
 	char len[6] = { (char)('0' + n / 100u), (char)('0' + n / 10u % 10u), (char)('0' + n % 10u), '\r', '\n', 0 };
-	ktx_replies = replies;
+	ktx_oks = bt.oks;
+	ktx_errs = bt.errs;
 	kiss_put_str("AT+ADATA=01,");
 	kiss_put_str(len);
 	for (size_t i = 0; i < n; i++) {
@@ -494,6 +519,8 @@ void d578uv_bt_stats(hal_bt_stats_t *st)
 	st->kiss_out = k_out;
 	st->kiss_out_bytes = k_out_bytes;
 	st->kiss_timeouts = k_timeouts;
+	st->kiss_link = klink;
+	st->kiss_probes = k_probes;
 #if D578UV_BT_GPS
 	st->kiss_gps_want = gps_want;
 	st->kiss_gps_out = k_gps_out;
@@ -510,6 +537,11 @@ bool d578uv_bt_power_want(void)
 
 bool d578uv_bt_linked(void)
 {
+#if CONFIG_BT_KISS
+	if (klink) {
+		return true;	// a phone on the SPP link (no +CONN for it)
+	}
+#endif
 	return bt.links != 0;
 }
 
