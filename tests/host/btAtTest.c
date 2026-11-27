@@ -225,6 +225,88 @@ static void test_replies(void)
 	CHECK(b.oks == 2 && b.errs == 2 && b.present);
 }
 
+// APRS add-on board frames (the AT-D578UV PLUS): "+APRS:" '~' frame+FCS '~', binary, no line end
+static uint8_t abuf[64];
+static unsigned adone, alen;
+static void aprs_done(uint16_t len)
+{
+	adone++;
+	alen = len;
+}
+
+static void feed_bin(bt_at_t *b, const uint8_t *p, size_t n)
+{
+	for (size_t i = 0; i < n; i++) {
+		bt_at_byte(b, p[i]);
+	}
+}
+
+static void test_aprs_board(void)
+{
+	// KI9NG-15>APZ578:>D578 RX test 1 03:36:04, FCS 0x973a: the bytes the board sent on the bench (2026-11-27)
+	static const uint8_t fr[] = { 0x82, 0xa0, 0xb4, 0x6a, 0x6e, 0x70, 0x60, 0x96, 0x92, 0x72, 0x9c, 0x8e, 0x40, 0x7f,
+		0x03, 0xf0, '>', 'D', '5', '7', '8', ' ', 'R', 'X', ' ', 't', 'e', 's', 't', ' ', '1', ' ', '0', '3', ':',
+		'3', '6', ':', '0', '4', 0x3a, 0x97 };
+	bt_at_t b;
+	bt_at_init(&b);
+	b.aprs_buf = abuf;
+	b.aprs_max = sizeof(abuf);
+	b.aprs_done = aprs_done;
+	adone = 0;
+	feed(&b, "OK\r\n+APRS:~");
+	feed_bin(&b, fr, sizeof(fr));
+	feed(&b, "~OK\r\n");
+	CHECK(adone == 1 && alen == sizeof(fr) && memcmp(abuf, fr, sizeof(fr)) == 0);
+	CHECK(b.oks == 2 && b.errors == 0 && b.aprs_frames == 1 && !b.aprs && b.aprs_board);
+	// a '~' in the address field (SSID 15, not the last address) and line bytes in the info are data
+	static const uint8_t f2[] = { 0x82, 0xa0, 0xb4, 0x6a, 0x6e, 0x70, 0x7e, 0x96, 0x92, 0x72, 0x9c, 0x8e, 0x40, 0x7f,
+		0x03, 0xf0, '+', '\r', '\n', 'O', 'K', 0x00, 0x11, 0x22 };
+	adone = 0;
+	feed(&b, "+APRS:~");
+	feed_bin(&b, f2, sizeof(f2));
+	feed(&b, "~");
+	CHECK(adone == 1 && alen == sizeof(f2) && memcmp(abuf, f2, sizeof(f2)) == 0);
+	feed(&b, "OK\r\n");
+	CHECK(b.oks == 3 && b.errors == 0);
+	// too long for the buffer: dropped, counted, nothing handed on
+	adone = 0;
+	b.aprs_max = 20;
+	feed(&b, "+APRS:~");
+	feed_bin(&b, fr, sizeof(fr));
+	CHECK(adone == 0 && b.aprs_overflows == 1 && !b.aprs);
+	b.aprs_max = sizeof(abuf);
+	feed(&b, "~\r\nOK\r\n");
+	CHECK(b.oks == 4);
+	// not a UI frame (control 0x13): its '~' doesn't close it; it runs into the buffer's end and is dropped
+	uint8_t f3[sizeof(fr)];
+	memcpy(f3, fr, sizeof(fr));
+	f3[14] = 0x13;
+	adone = 0;
+	feed(&b, "+APRS:~");
+	feed_bin(&b, f3, sizeof(f3));
+	feed(&b, "~");
+	CHECK(adone == 0 && b.aprs);
+	for (unsigned i = 0; i < sizeof(abuf); i++) {
+		bt_at_byte(&b, 0x55);
+	}
+	CHECK(!b.aprs && b.aprs_overflows == 2);
+	// a UART error mid-frame ends it; the next line parses
+	feed(&b, "\r\n+APRS:~");
+	feed_bin(&b, fr, 10);
+	bt_at_error(&b);
+	CHECK(!b.aprs);
+	feed(&b, "+PTTKEY=1\r\n");
+	CHECK(b.fob_ptt);
+	// without a buffer the frame isn't taken (as before)
+	bt_at_t n;
+	bt_at_init(&n);
+	adone = 0;
+	feed(&n, "+APRS:~");
+	feed_bin(&n, fr, sizeof(fr));
+	feed(&n, "~");
+	CHECK(adone == 0 && !n.aprs && n.aprs_frames == 0);
+}
+
 int main(void)
 {
 	test_presence();
@@ -235,6 +317,7 @@ int main(void)
 	test_errors();
 	test_raw_payload();
 	test_replies();
+	test_aprs_board();
 	// A KISS frame without its +ADATA header (the PLUS's APRS board): FEND to FEND to the raw sink, not errors
 	{
 		static uint8_t got[16];

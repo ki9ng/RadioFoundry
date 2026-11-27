@@ -37,6 +37,9 @@ const hal_afsk_t d578uv_afsk = {
 	.rx_read = rx_read,
 	.rx_stop = d578uv_rxtap_stop,
 #endif
+#if D578UV_BT_APRS
+	.rx_frame = d578uv_bt_aprs_frame,
+#endif
 };
 
 #endif	// CONFIG_APRS

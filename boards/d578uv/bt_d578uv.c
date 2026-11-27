@@ -55,6 +55,59 @@ static bt_at_t bt;
 static uint32_t start_ms, key_ms, key_seen, offs;
 static uint8_t probes, key_bit_held = 0xFF;
 
+#if D578UV_BT_APRS
+#include <string.h>
+#include "aprs/ax25.h"
+
+// Frames from the PLUS's APRS add-on board (ki9ng fork). Its CMX865A decodes side B's receive audio (bench,
+// 2026-11-27: side A's packets never came out of it); it sends "+APRS:~<frame + FCS>~" on this UART. bt_at assembles
+// the frame into brd_rx in the UART interrupt, brd_done moves it to the ready slot, and the radio task takes it
+// (d578uv_bt_aprs_frame, the core's hal_afsk_t.rx_frame), checks the FCS and gives it to the APRS engine straight from
+// the slot, which frees at the next call. One frame waits; another arriving meanwhile is dropped (counted). A '~' in the FCS or info ends the board's frame early (it
+// doesn't escape them): those fail the check
+#define BRD_FRAME_MAX		(AX25_FRAME_MAX + 2u)
+#define BRD_FRAME_MIN		(AX25_ADDR_BYTES * 2u + 2u + 2u)	// two addresses, control, PID and the FCS
+static uint8_t brd_rx[BRD_FRAME_MAX], brd_ready[BRD_FRAME_MAX];
+static volatile uint16_t brd_ready_len;	// 0: the slot is free
+static bool brd_lent;			// the radio task has the slot's frame (until its next call)
+static uint32_t brd_ok, brd_bad, brd_busy;
+
+// UART interrupt: a whole frame in brd_rx
+static void brd_done(uint16_t len)
+{
+	if (brd_ready_len != 0) {
+		brd_busy++;
+		return;
+	}
+	memcpy(brd_ready, brd_rx, len);
+	brd_ready_len = len;
+}
+
+// Radio task: the waiting frame with a good FCS, without it (in the slot); 0 when there is none (a bad one is dropped).
+// The frame lent last time is done with by now: its slot frees first
+uint16_t d578uv_bt_aprs_frame(const uint8_t **frame)
+{
+	if (brd_lent) {
+		brd_lent = false;
+		brd_ready_len = 0;	// the interrupt fills the slot only while it is free
+	}
+	uint16_t n = brd_ready_len;
+	if (n == 0) {
+		return 0;
+	}
+	if (n >= BRD_FRAME_MIN &&
+	    ax25_fcs(brd_ready, n - 2u) == (uint16_t)(brd_ready[n - 2u] | (uint16_t)brd_ready[n - 1u] << 8)) {
+		brd_ok++;
+		brd_lent = true;
+		*frame = brd_ready;
+		return (uint16_t)(n - 2u);
+	}
+	brd_bad++;
+	brd_ready_len = 0;
+	return 0;
+}
+#endif
+
 #if CONFIG_BT_KISS
 #include "aprs/aprs.h"
 #include "aprs/aprs_host.h"
@@ -266,6 +319,11 @@ void MCU_UART4_HANDLER(void)
 void d578uv_bt_init(void)
 {
 	bt_at_init(&bt);
+#if D578UV_BT_APRS
+	bt.aprs_buf = brd_rx;
+	bt.aprs_max = (uint16_t)sizeof(brd_rx);
+	bt.aprs_done = brd_done;
+#endif
 #if CONFIG_BT_KISS
 	bt.raw_sink = kiss_sink;
 	kiss_dec_init(&kdec);
@@ -421,6 +479,13 @@ void d578uv_bt_stats(hal_bt_stats_t *st)
 	st->aprs_board = bt.aprs_board;
 	st->oks = bt.oks;
 	st->errs = bt.errs;
+#if D578UV_BT_APRS
+	st->aprs_frames = bt.aprs_frames;
+	st->aprs_long = bt.aprs_overflows;
+	st->aprs_ok = brd_ok;
+	st->aprs_bad = brd_bad;
+	st->aprs_busy = brd_busy;
+#endif
 #if CONFIG_BT_KISS
 	st->kiss_taken = d578uv_bt_kiss_taken();
 	st->kiss_raw = bt.raw_bytes;

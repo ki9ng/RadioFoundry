@@ -445,6 +445,9 @@ static void link_section(dl_text_t *t)
 		dl_text(t, "input.bt_kiss_gps_want=%u\ninput.bt_kiss_gps_out=%u\n", (unsigned)bt.kiss_gps_want,
 			(unsigned)bt.kiss_gps_out);
 #endif
+		dl_text(t, "input.bt_aprs_frames=%u\ninput.bt_aprs_ok=%u\ninput.bt_aprs_bad=%u\ninput.bt_aprs_busy=%u\n"
+			"input.bt_aprs_long=%u\n", (unsigned)bt.aprs_frames, (unsigned)bt.aprs_ok, (unsigned)bt.aprs_bad,
+			(unsigned)bt.aprs_busy, (unsigned)bt.aprs_long);
 	}
 	dl_text(t, "input.long_ms=%u\ninput.ptt_downs=%u\n", (unsigned)input_long_ms(), (unsigned)input_ptt_downs());
 	if (board.system != NULL && board.system->irq_unhandled != NULL) {

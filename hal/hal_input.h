@@ -112,6 +112,9 @@ typedef struct {
 	uint32_t oks, errs;	// the module's OK and ERR replies
 	uint32_t kiss_timeouts;	// sends that got no reply in time
 	bool kiss_gps_want;	// the host asked for the GPS sentences (ki9ng fork)
+	// The APRS add-on board's decoded frames (ki9ng fork): taken by the parser, CRC good, CRC bad or too short,
+	// dropped while one waited, dropped as too long
+	uint32_t aprs_frames, aprs_ok, aprs_bad, aprs_busy, aprs_long;
 	uint32_t kiss_gps_out;	// GPS sentences sent to it
 } hal_bt_stats_t;
 

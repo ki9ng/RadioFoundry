@@ -891,6 +891,13 @@ uint32_t aprs_mute_hz(void)
 void aprs_ax25_rx_service(const aprs_radio_t *r, uint32_t now_ms)
 {
 	const hal_afsk_t *h = board.afsk;
+	if (h != NULL && h->rx_frame != NULL && aprs_s.cfg.rx_on) {
+		const uint8_t *hw = NULL;
+		uint16_t n = h->rx_frame(&hw);
+		if (n != 0 && hw != NULL) {
+			aprs_rx_frame(hw, n, now_ms);
+		}
+	}
 	bool own = rx_by_board();
 	bool want = aprs_s.cfg.rx_on && r->fm_rx && r->rx_hz != 0 && r->rx_hz == aprs_cfg_freq(&aprs_s.cfg) &&
 		    (own || rx_by_stream());

@@ -8,7 +8,13 @@
 // The radio asks with BT_AT_PROBE ("AT+VER?"); the module answers lines that start with '+', 'O' (OK) or 'E' (ERR)
 // and end with LF (a CR before it is dropped). A line longer than BT_AT_LINE_MAX is dropped whole. Any line counts as
 // the module answering. A +VER line naming the APRS add-on board (which sits on the same UART) marks it: that board
-// isn't a Bluetooth module, and its binary frames after +APRS: aren't lines, so the parser drops them (errors).
+// isn't a Bluetooth module.
+//
+// APRS board frames (ki9ng fork): the AT-D578UV PLUS's APRS add-on board decodes APRS in hardware and sends each
+// frame as "+APRS:", '~', the AX.25 frame with its FCS, '~' and no line end (its firmware, M V2.00). With aprs_buf
+// set, the bytes after "+APRS:" go there (in the UART interrupt) instead of the line parser, and aprs_done gets the
+// length (FCS included, not checked here). Like the board, the frame ends at the first '~' after its UI header
+// (03 F0): a '~' in the address field is data. Without aprs_buf they're dropped as before (errors).
 //
 // PTT has three sources, any one held keys the radio:
 //   +PTTKEY=1 / 0          the PTT button (key fob): pressed, released
@@ -58,6 +64,15 @@ typedef struct {
 	uint32_t raw_bytes;		// raw payload bytes taken
 	uint32_t oks, errs;		// OK and ERR replies from the module
 	void (*raw_sink)(uint8_t c);	// where raw payload bytes go (NULL: dropped); called in the UART interrupt
+	uint8_t *aprs_buf;		// where an APRS board frame goes (NULL: not taken), aprs_max bytes
+	uint16_t aprs_max;
+	void (*aprs_done)(uint16_t len);	// a frame is complete in aprs_buf (UART interrupt)
+	bool aprs;			// an APRS board frame under way
+	bool aprs_lead;			// ... its opening '~' not yet past
+	bool aprs_ui;			// ... its UI header seen: the next '~' closes it
+	uint16_t aprs_len;		// ... bytes so far
+	uint16_t aprs_ctl;		// ... where its control byte is (0: the address field hasn't ended yet)
+	uint32_t aprs_frames, aprs_overflows;	// frames handed on; frames dropped as too long (or not UI)
 } bt_at_t;
 
 static inline void bt_at_init(bt_at_t *b)
@@ -84,6 +99,7 @@ static inline void bt_at_error(bt_at_t *b)
 	b->payload = 0;
 	b->payload_first = false;
 	b->raw = false;
+	b->aprs = false;
 	b->errors++;
 }
 
@@ -178,6 +194,39 @@ static inline void bt_at_line(bt_at_t *b, const char *s)
 	}
 }
 
+// One byte of an APRS board frame
+static inline void bt_at_aprs_byte(bt_at_t *b, uint8_t c)
+{
+	if (b->aprs_lead) {
+		if (c == 0x7Eu) {
+			return;		// the opening flag
+		}
+		b->aprs_lead = false;
+	}
+	if (c == 0x7Eu && b->aprs_ui) {
+		b->aprs = false;
+		b->aprs_frames++;
+		if (b->aprs_done != NULL) {
+			b->aprs_done(b->aprs_len);
+		}
+		return;
+	}
+	if (b->aprs_len >= b->aprs_max) {
+		b->aprs = false;	// too long, or no UI header: dropped (the board itself gives up at 400 bytes)
+		b->aprs_overflows++;
+		b->errors++;
+		return;
+	}
+	b->aprs_buf[b->aprs_len++] = c;
+	if (b->aprs_ctl == 0) {
+		if (b->aprs_len % 7u == 0 && (c & 1u) != 0) {
+			b->aprs_ctl = b->aprs_len;	// the last address's SSID byte has the extension bit
+		}
+	} else if (b->aprs_len == b->aprs_ctl + 2u) {
+		b->aprs_ui = b->aprs_buf[b->aprs_ctl] == 0x03u && c == 0xF0u;
+	}
+}
+
 // One received byte
 static inline void bt_at_byte(bt_at_t *b, uint8_t c)
 {
@@ -208,6 +257,10 @@ static inline void bt_at_byte(bt_at_t *b, uint8_t c)
 		if (--b->payload == 0) {
 			b->raw = false;
 		}
+		return;
+	}
+	if (b->aprs) {
+		bt_at_aprs_byte(b, c);
 		return;
 	}
 	if (b->n == 0 && c == 0xC0u && b->payload == 0) {
@@ -254,6 +307,17 @@ static inline void bt_at_byte(bt_at_t *b, uint8_t c)
 	}
 	if (b->n <= BT_AT_LINE_MAX) {
 		b->n++;
+	}
+	if (b->n == 6u && b->aprs_buf != NULL && b->payload == 0 && memcmp(b->line, "+APRS:", 6) == 0) {
+		b->n = 0;		// an APRS board frame follows, binary: not a line
+		b->lines++;
+		b->present = true;
+		b->aprs_board = true;
+		b->aprs = true;
+		b->aprs_lead = true;
+		b->aprs_ui = false;
+		b->aprs_len = 0;
+		b->aprs_ctl = 0;
 	}
 }
 

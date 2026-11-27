@@ -196,6 +196,12 @@ static inline void d578uv_bt_off(void)
 }
 #endif
 
+// Frames the PLUS's APRS add-on board decoded (side B's audio), from its +APRS: lines on UART4 (bt_d578uv.c, ki9ng
+// fork): hal_afsk_t.rx_frame (radio task)
+#define D578UV_BT_APRS	(CONFIG_BT_PTT && CONFIG_BT_KISS && CONFIG_APRS_RX)
+#if D578UV_BT_APRS
+uint16_t d578uv_bt_aprs_frame(const uint8_t **frame);
+#endif
 // The board GPS's sentences out over Bluetooth KISS to a host that asks for them (bt_d578uv.c, ki9ng fork)
 #define D578UV_BT_GPS	(CONFIG_BT_PTT && CONFIG_BT_KISS && CONFIG_GPS)
 #if D578UV_BT_GPS

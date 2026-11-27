@@ -36,6 +36,11 @@ typedef struct {
 	// Up to max samples received since the last call; 0 when none
 	uint16_t (*rx_read)(int16_t *buf, uint16_t max);
 	void (*rx_stop)(void);
+	// Optional: a frame a hardware modem decoded and checked, AX.25 without its FCS: *frame points at it (the board's
+	// buffer, valid until the next call), the length returned, 0 when none. Polled by the core each radio tick while
+	// APRS receive is on, any frequency (radio task, outside the APRS lock). Ki9ng fork: the AT-D578UV PLUS's APRS
+	// add-on board
+	uint16_t (*rx_frame)(const uint8_t **frame);
 } hal_afsk_t;
 
 #endif
