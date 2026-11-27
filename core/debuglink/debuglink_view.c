@@ -367,6 +367,32 @@ static void sfr_section(dl_text_t *t)
 #endif
 }
 
+// The Bluetooth module (and the APRS board behind it): its own section, as the link section outgrew a reply with
+// these keys (truncated=1 before input.bt_aprs_*; ki9ng fork)
+static void bt_section(dl_text_t *t)
+{
+	hal_bt_stats_t bt;
+	if (input_bt_stats(&bt)) {
+		dl_text(t, "input.bt_present=%u\ninput.bt_ptt=%u\ninput.bt_key=%u\ninput.bt_keys=%u\n", (unsigned)bt.present,
+			(unsigned)bt.ptt, (unsigned)bt.key, (unsigned)bt.keys);
+		dl_text(t, "input.bt_lines=%u\ninput.bt_errors=%u\ninput.bt_links=%u\ninput.bt_offs=%u\n",
+			(unsigned)bt.lines, (unsigned)bt.errors, (unsigned)bt.links, (unsigned)bt.offs);
+		dl_text(t, "input.bt_aprs_board=%u\ninput.bt_oks=%u\ninput.bt_errs=%u\n", (unsigned)bt.aprs_board,
+			(unsigned)bt.oks, (unsigned)bt.errs);
+#if CONFIG_BT_KISS
+		dl_text(t, "input.bt_kiss_taken=%u\ninput.bt_kiss_raw=%u\ninput.bt_kiss_in=%u\ninput.bt_kiss_drop=%u\n",
+			(unsigned)bt.kiss_taken, (unsigned)bt.kiss_raw, (unsigned)bt.kiss_in, (unsigned)bt.kiss_drop);
+		dl_text(t, "input.bt_kiss_out=%u\ninput.bt_kiss_out_bytes=%u\ninput.bt_kiss_timeouts=%u\n",
+			(unsigned)bt.kiss_out, (unsigned)bt.kiss_out_bytes, (unsigned)bt.kiss_timeouts);
+		dl_text(t, "input.bt_kiss_gps_want=%u\ninput.bt_kiss_gps_out=%u\n", (unsigned)bt.kiss_gps_want,
+			(unsigned)bt.kiss_gps_out);
+#endif
+		dl_text(t, "input.bt_aprs_frames=%u\ninput.bt_aprs_ok=%u\ninput.bt_aprs_bad=%u\ninput.bt_aprs_busy=%u\n"
+			"input.bt_aprs_long=%u\n", (unsigned)bt.aprs_frames, (unsigned)bt.aprs_ok, (unsigned)bt.aprs_bad,
+			(unsigned)bt.aprs_busy, (unsigned)bt.aprs_long);
+	}
+}
+
 static void link_section(dl_text_t *t)
 {
 	uint32_t c[DL_LINK_COUNTERS];
@@ -428,26 +454,6 @@ static void link_section(dl_text_t *t)
 		dl_text(t, "input.hmic_present=%u\ninput.hmic_ptt=%u\ninput.hmic_key=%u\n", (unsigned)hm.present,
 			(unsigned)hm.ptt, (unsigned)hm.key);
 		dl_text(t, "input.hmic_frames=%u\ninput.hmic_errors=%u\n", (unsigned)hm.frames, (unsigned)hm.errors);
-	}
-	hal_bt_stats_t bt;
-	if (input_bt_stats(&bt)) {
-		dl_text(t, "input.bt_present=%u\ninput.bt_ptt=%u\ninput.bt_key=%u\ninput.bt_keys=%u\n", (unsigned)bt.present,
-			(unsigned)bt.ptt, (unsigned)bt.key, (unsigned)bt.keys);
-		dl_text(t, "input.bt_lines=%u\ninput.bt_errors=%u\ninput.bt_links=%u\ninput.bt_offs=%u\n",
-			(unsigned)bt.lines, (unsigned)bt.errors, (unsigned)bt.links, (unsigned)bt.offs);
-		dl_text(t, "input.bt_aprs_board=%u\ninput.bt_oks=%u\ninput.bt_errs=%u\n", (unsigned)bt.aprs_board,
-			(unsigned)bt.oks, (unsigned)bt.errs);
-#if CONFIG_BT_KISS
-		dl_text(t, "input.bt_kiss_taken=%u\ninput.bt_kiss_raw=%u\ninput.bt_kiss_in=%u\ninput.bt_kiss_drop=%u\n",
-			(unsigned)bt.kiss_taken, (unsigned)bt.kiss_raw, (unsigned)bt.kiss_in, (unsigned)bt.kiss_drop);
-		dl_text(t, "input.bt_kiss_out=%u\ninput.bt_kiss_out_bytes=%u\ninput.bt_kiss_timeouts=%u\n",
-			(unsigned)bt.kiss_out, (unsigned)bt.kiss_out_bytes, (unsigned)bt.kiss_timeouts);
-		dl_text(t, "input.bt_kiss_gps_want=%u\ninput.bt_kiss_gps_out=%u\n", (unsigned)bt.kiss_gps_want,
-			(unsigned)bt.kiss_gps_out);
-#endif
-		dl_text(t, "input.bt_aprs_frames=%u\ninput.bt_aprs_ok=%u\ninput.bt_aprs_bad=%u\ninput.bt_aprs_busy=%u\n"
-			"input.bt_aprs_long=%u\n", (unsigned)bt.aprs_frames, (unsigned)bt.aprs_ok, (unsigned)bt.aprs_bad,
-			(unsigned)bt.aprs_busy, (unsigned)bt.aprs_long);
 	}
 	dl_text(t, "input.long_ms=%u\ninput.ptt_downs=%u\n", (unsigned)input_long_ms(), (unsigned)input_ptt_downs());
 	if (board.system != NULL && board.system->irq_unhandled != NULL) {
@@ -658,7 +664,7 @@ static const char *const section_names[DL_VIEW_COUNT] = { "core", "channel", "dm
 						  "dmr_data_stats", "roam", "aprs", "aprs_set", "dmr_ip", "net", "snmp", "usrp",
 						  "sfr", "tasks", "crash", "watchdog", "reset", "air", "net_svc",
 						  "net_link", "cps", "board", "audio", "t3", "t3_svc", "t3_roam", "voice_cap", "t3_msg",
-						  "t3_ra", "p25", "p25_trunk", "nxdn", "sensors" };
+						  "t3_ra", "p25", "p25_trunk", "nxdn", "sensors", "bt" };
 
 const char *debuglink_view_name(uint8_t section)
 {
@@ -692,6 +698,9 @@ void debuglink_view_section(uint8_t section, const radio_view_t *v, dl_text_t *t
 		break;
 	case DL_VIEW_LINK:
 		link_section(t);
+		break;
+	case DL_VIEW_BT:
+		bt_section(t);
 		break;
 	case DL_VIEW_FEATURES:
 		debuglink_view_radio(v, t);

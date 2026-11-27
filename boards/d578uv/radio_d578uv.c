@@ -274,6 +274,16 @@ static struct { uint32_t hz; radio_bw_t bw; bool digital; subtone_t tone; int16_
 static bool transmitting;
 static bool bt_cut;		// the Bluetooth module's supply off for this transmission (tx)
 static uint8_t sr;			// the shift register's outputs
+// Bench forces (ki9ng fork, debug link chips 0x10 and 0x11, RAM only): shift register bits held set or clear over what
+// the firmware wants, and a level code held on a side (0xFF none). The debug link (host task) only stores them; the
+// radio task applies them at its next status poll (amp_service), so the shift register keeps its one writer
+#define D578UV_BENCH		CONFIG_BT_KISS
+#if D578UV_BENCH
+static volatile uint8_t bench_sr_set, bench_sr_clr;
+static volatile uint8_t bench_level[2] = { 0xFFu, 0xFFu };
+static volatile bool bench_pending;
+#endif
+static uint8_t sr_out;			// what the shift register holds: sr with the bench forces
 static bool main_audio;			// side A's audio to the speaker (audio())
 // The squelch tail: when an FM carrier goes, the chip's noise reading takes a poll or two to rise, and the core's
 // squelch held open on it for about 30 ms of loud noise (measured by microphone). Its signal flag and the RSSI fall at
@@ -506,9 +516,13 @@ static void sr_shift(uint8_t v)
 
 static void sr_set(uint8_t set, uint8_t clear)
 {
-	uint8_t v = (uint8_t)((sr & ~clear) | set);
-	if (v != sr) {
-		sr = v;
+	sr = (uint8_t)((sr & ~clear) | set);
+	uint8_t v = sr;
+#if D578UV_BENCH
+	v = (uint8_t)((v & ~bench_sr_clr) | bench_sr_set);
+#endif
+	if (v != sr_out) {
+		sr_out = v;
 		sr_shift(v);
 	}
 }
@@ -601,6 +615,11 @@ static uint8_t level_code(uint8_t level)
 static void level_set(uint8_t side, uint8_t code)
 {
 #if D578UV_LEVEL_IC
+#if D578UV_BENCH
+	if (bench_level[side] != 0xFFu) {
+		code = bench_level[side];
+	}
+#endif
 	if (code == level_last[side]) {
 		return;
 	}
@@ -729,6 +748,17 @@ static void audio_route(void)
 // Every status poll: the amplifier off once its hang has run out (with a hang: front_io.h)
 static void amp_service(void)
 {
+#if D578UV_BENCH
+	if (bench_pending) {
+		bench_pending = false;
+		sr_set(0, 0);
+#if D578UV_LEVEL_IC
+		level_last[0] = -1;
+		level_last[1] = -1;
+#endif
+		audio_route();
+	}
+#endif
 	if (amp_hang.hanging && (int32_t)(hal_millis() - amp_hang.until) >= 0) {
 		audio_route();
 	}
@@ -1878,6 +1908,7 @@ static void init(void)
 	mcu_pin_out(PIN_SPK_MUTE, true, false);
 	mcu_pin_out(PIN_SR_LATCH, true, false);
 	sr = SR_BOOT;
+	sr_out = sr;
 	sr_shift(sr);
 
 	d578uv_bus_init();
@@ -2671,6 +2702,39 @@ bool d578uv_chip_reg(uint8_t chip, uint8_t pg, uint8_t reg, uint32_t *val, bool 
 			return false;
 		}
 		*val = b;
+		return true;
+	}
+#endif
+#if D578UV_BENCH
+	// Bench forces (RAM only, see bench_sr_set): chip 0x10 the shift register (reg 0 bits held set, 1 held clear;
+	// read: 2 what the firmware wants, 3 what is out), chip 0x11 the level device (reg 2 side A, 3 side B: a code held,
+	// 0xFF none; read: 0 and 1 the codes written)
+	if ((chip == 0x10u || chip == 0x11u) && pg == 0) {
+		if (write && (*val > 0xFFu || reg > 3u || (chip == 0x10u && reg > 1u) || (chip == 0x11u && reg < 2u) ||
+			      (chip == 0x11u && *val > 0x7Fu && *val != 0xFFu))) {
+			return false;
+		}
+		if (chip == 0x10u) {
+			if (write) {
+				if (reg == 0) {
+					bench_sr_set = (uint8_t)*val;
+				} else {
+					bench_sr_clr = (uint8_t)*val;
+				}
+				bench_pending = true;
+			}
+			*val = reg == 0 ? bench_sr_set : reg == 1 ? bench_sr_clr : reg == 2 ? sr : sr_out;
+			return true;
+		}
+		if (write) {
+			bench_level[reg - 2u] = (uint8_t)*val;
+			bench_pending = true;
+		}
+#if D578UV_LEVEL_IC
+		*val = reg < 2u ? (uint32_t)(uint8_t)level_last[reg] : bench_level[reg - 2u];
+#else
+		*val = reg < 2u ? 0u : bench_level[reg - 2u];
+#endif
 		return true;
 	}
 #endif

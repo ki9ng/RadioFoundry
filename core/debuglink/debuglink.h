@@ -59,6 +59,7 @@ enum {
 	DL_VIEW_P25_TRUNK,	// a trunked P25 channel's follower: system, channels, call followed, counters (the same file)
 	DL_VIEW_NXDN,		// NXDN on the channel: the call, settings, the provider's fit, engine counters (debuglink_view_nxdn.c)
 	DL_VIEW_SENSORS,	// the temperature sensors and the fan (core/app/temp.c)
+	DL_VIEW_BT,		// the Bluetooth module, its KISS and the APRS board's frames (ki9ng fork)
 	DL_VIEW_COUNT
 };
 #define DL_VIEW_VERSION		5	// bumped when a key changes meaning or goes away (new keys don't bump it)
