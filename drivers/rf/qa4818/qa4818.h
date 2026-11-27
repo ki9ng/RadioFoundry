@@ -13,6 +13,7 @@
 #ifndef QA4818_H
 #define QA4818_H
 
+#include <stddef.h>
 #include <stdint.h>
 #include <stdbool.h>
 #include "rf/rfbus/rfbus.h"
@@ -89,6 +90,8 @@ void qa4818_rx_plan(uint32_t hz, uint32_t if_hz, qa4818_rx_plan_t *p);
 // The transceiver's VCO sub-band for transmitting on hz
 uint8_t qa4818_tx_subband(uint32_t hz);
 // CTCSS detector thresholds (0x52) for a tone in Hz x 10: per tone of the standard set, a catch-all otherwise
+// The tone's place in the CTCSS table (the first at or above it; CTCSS_TONES past the last)
+size_t qa4818_ctcss_index(uint16_t hz_x10);
 uint16_t qa4818_ctcss_detect(uint16_t hz_x10);
 // The drive register (0x40) for transmitting on hz at drive level drive; wide: 25 kHz (one step less, which doubles
 // the deviation: measured)

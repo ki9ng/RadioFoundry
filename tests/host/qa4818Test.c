@@ -646,12 +646,25 @@ static void test_v2_ops(void)
 	CHECK(qa4818_rssi_dbm(qa4818_v2_rssi(620)) == -43);	// its ceiling
 	CHECK(qa4818_v2_rssi(100) == 0 && qa4818_v2_rssi(0xFC00u | 290u) == 70u);
 
+	// Receive CTCSS: the bench's 123.0 Hz set, and 0x0E bit 0 its flag
+	qa4818_rx_tone(&c, QA4818_TONE_CTCSS, 1230);
+	CHECK(s.regs[0x2E] == 0xE812 && s.regs[0x2D] == 0x0215 && s.regs[0x2C] == 0x3850 && s.regs[0x2F] == 0x0A0F);
+	CHECK(qa4818_v2_ctcss_detect(670) == 0xE48A && qa4818_v2_ctcss_detect(2541) == 0xE9D9);
+	CHECK(qa4818_v2_ctcss_detect(2600) == 0xE9D9);	// past the table
+	s.regs[0x0E] = 0x4001;
+	qa4818_status(&c, &st);
+	CHECK(qa4818_tone_heard(QA4818_TONE_CTCSS, st.tone_flags));
+	s.regs[0x0E] = 0x4000;
+	qa4818_status(&c, &st);
+	CHECK(!qa4818_tone_heard(QA4818_TONE_CTCSS, st.tone_flags) && qa4818_tone_heard(QA4818_TONE_DCS, st.tone_flags));
+	qa4818_rx_tone(&c, QA4818_TONE_NONE, 0);
+	CHECK(s.regs[0x2D] == 0x3205);
+
 	// What isn't ported writes nothing (a QA4818 write would land on another register of this chip)
 	n = s.n;
 	qa4818_beep(&c, 1000, 20, QA4818_AF_VOICE);
 	qa4818_af_out(&c, QA4818_AF_VOICE);
 	qa4818_gain(&c, 0x50);
-	qa4818_rx_tone(&c, QA4818_TONE_CTCSS, 1000);
 	qa4818_enable(&c, QA4818_ENABLE_TX);	// a transceiver: transmit not ported
 	qa4818_init_trx(&c, 0x0001, 0x26AC);
 	qa4818_init_lo(&c);

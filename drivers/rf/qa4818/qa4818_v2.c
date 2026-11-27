@@ -304,7 +304,10 @@ void qa4818_v2_status(qa4818_t *c, qa4818_status_t *st)
 	st->signal = (s & 0x4000u) != 0;
 	st->rssi = qa4818_v2_rssi(rd(c, 0x02));
 	st->noise = st->signal ? V2_NOISE_SIGNAL : V2_NOISE_NONE;
-	st->tone_flags = 0;
+	// 0x0E bit 0: the CTCSS tone set by qa4818_v2_rx_tone() is heard (KI9NG bench: on with 123.0 Hz, off with no
+	// tone, 100.0 and 173.8 Hz; bit 14 comes with any carrier, bit 1 at each unkey). DCS decode isn't ported: a DCS
+	// channel opens on any carrier
+	st->tone_flags = (uint16_t)(((s & 0x0001u) ? QA4818_CTCSS_HEARD : 0u) | QA4818_DCS_HEARD | QA4818_DCS_INV_HEARD);
 }
 
 // ---- FM transmit (the vendor's key-up order: tune, path, width, output stage, microphone, sub-audio, audio, drive,
@@ -347,6 +350,44 @@ void qa4818_v2_no_tone(qa4818_t *c)
 uint16_t qa4818_v2_ctcss_word(uint16_t hz_x10)
 {
 	return (uint16_t)(((uint32_t)hz_x10 * 2097152u) / 1000000u);
+}
+
+// The CTCSS detector's thresholds for each tone of the QA4818's table (qa4818_ctcss_index()), the vendor's: 0x2E's
+// 0xE000 field, bits 5:0 and 11:6. A tone past the table takes the last one's
+static const uint16_t ctcss_detect_v2[] = {
+	0xE48A, 0xE48A, 0xE58C, 0xE58C, 0xE58C, 0xE58C, 0xE58C, 0xE58C, 0xE58C, 0xE58C, 0xE58C, 0xE58C, 0xE58C, 0xE58C,
+	0xE78F, 0xE78F, 0xE812, 0xE812, 0xE812, 0xE812, 0xE812, 0xE994, 0xE994, 0xE994, 0xE994, 0xEA14, 0xE64F, 0xE54E,
+	0xE54E, 0xE58F, 0xE58F, 0xE58F, 0xE5D0, 0xE5D0, 0xE5D0, 0xE611, 0xE611, 0xE693, 0xE693, 0xE693, 0xE693, 0xE714,
+	0xE715, 0xEA15, 0xEA16, 0xE817, 0xE817, 0xEA17, 0xEA18, 0xE9D9, 0xE9D9,
+};
+#define CTCSS_DETECT_V2_N	(sizeof(ctcss_detect_v2) / sizeof(ctcss_detect_v2[0]))
+
+uint16_t qa4818_v2_ctcss_detect(uint16_t hz_x10)
+{
+	size_t i = qa4818_ctcss_index(hz_x10);
+	return ctcss_detect_v2[i < CTCSS_DETECT_V2_N ? i : CTCSS_DETECT_V2_N - 1u];
+}
+
+// Receive sub-audio, the vendor's set (0x2E's fields as for transmit, qa4818_v2_tx_tone()): the tone word, a second
+// word 0x0485 latched (55.2 Hz: the tail tone), the detect window at the word +-0x50 (0x4000, 0x6000), 0x2C, 0x2D as
+// the vendor picks it, the thresholds, then the detector restarted (0x2F). Its flag: 0x0E bit 0 (qa4818_v2_status()).
+// DCS isn't ported: no sub-audio, and the channel opens on any carrier
+void qa4818_v2_rx_tone(qa4818_t *c, qa4818_tone_t type, uint16_t value)
+{
+	if (type != QA4818_TONE_CTCSS) {
+		qa4818_v2_no_tone(c);
+		return;
+	}
+	uint16_t w = qa4818_v2_ctcss_word(value);
+	wr(c, 0x2E, w);
+	wr(c, 0x2E, 0x2485);
+	wr(c, 0x2E, (uint16_t)(((w + 0x50u) & 0x1FFFu) | 0x4000u));
+	wr(c, 0x2E, (uint16_t)(((w - 0x50u) & 0x1FFFu) | 0x6000u));
+	wr(c, 0x2C, 0x3850);
+	wr(c, 0x2D, value == 2592u ? 0x2215 : value == 1000u ? 0x3215 : w < 0x0ACDu ? 0x0215 : 0x3215);
+	wr(c, 0x2E, qa4818_v2_ctcss_detect(value));
+	wr(c, 0x2F, 0x8A0F);
+	wr(c, 0x2F, 0x0A0F);
 }
 
 // Transmit sub-audio. Register 0x2E takes several fields by its top bits: the tone word (0x0000), its latch (0x2000),

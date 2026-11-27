@@ -98,13 +98,18 @@ uint8_t qa4818_tx_subband(uint32_t hz)
 	return hz >= MHZ(200) ? 2 : 3;
 }
 
-uint16_t qa4818_ctcss_detect(uint16_t hz_x10)
+size_t qa4818_ctcss_index(uint16_t hz_x10)
 {
 	size_t i = 0;
 	while (i < CTCSS_TONES && ctcss_tones[i] < hz_x10) {
 		i++;
 	}
-	return ctcss_detect[i];
+	return i;
+}
+
+uint16_t qa4818_ctcss_detect(uint16_t hz_x10)
+{
+	return ctcss_detect[qa4818_ctcss_index(hz_x10)];
 }
 
 uint16_t qa4818_drive_word(uint32_t hz, bool wide, uint8_t drive)
@@ -581,7 +586,8 @@ bool qa4818_tone_heard(qa4818_tone_t type, uint16_t flags)
 void qa4818_rx_tone(qa4818_t *c, qa4818_tone_t type, uint16_t value)
 {
 	if (c->v2) {
-		return;	// not ported to the newer chip: leave it alone
+		qa4818_v2_rx_tone(c, type, value);
+		return;
 	}
 	switch (type) {
 	case QA4818_TONE_CTCSS:
