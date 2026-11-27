@@ -19,8 +19,8 @@
 
 #define BT_BAUD			115200u
 #define BT_IRQ_PRIORITY		6
-#define BT_PROBES		10u	// 200 ms apart, from BT_PROBE_FIRST_MS
-#define BT_PROBE_MS		200u
+#define BT_PROBES		20u	// BT_PROBE_MS apart, from BT_PROBE_FIRST_MS
+#define BT_PROBE_MS		300u
 // The vendor's start (ki9ng fork, AT-D578UV PLUS): the supply on, 500 ms, then EE 01 06 three times 50 ms apart and
 // 200 ms more before the first AT+VER? (its probe of the APRS board, which on the PLUS sits between the radio and the
 // module). Without it the module never answered here (input.bt_lines 0 on every start). What EE 01 06 does isn't known
@@ -28,12 +28,16 @@
 #define BT_WAKE_GAP_MS		50u
 #define BT_WAKES		3u
 #define BT_PROBE_FIRST_MS	(BT_WAKE_MS + BT_WAKES * BT_WAKE_GAP_MS + 200u)
-#define BT_REPORT_MS		4000u	// one log line of what came back (bytes, errors, the first bytes)
+#define BT_REPORT_MS		8000u	// one log line of what came back (bytes, errors, the first bytes and when)
+#define BT_WAKE2_MS		3000u	// the wake again: a reply to it comes back right after (bench diagnostic)
+#define BT_BTON_MS		1500u	// AT+BTON once (the vendor's Bluetooth on)
 static const uint8_t bt_wake[] = { 0xEE, 0x01, 0x06 };
 #define BT_HEAD			24u
 static volatile uint8_t rx_head[BT_HEAD];
+static volatile uint16_t rx_at[BT_HEAD];	// ms after start_ms
 static volatile uint32_t rx_bytes, rx_errs;
-static uint8_t wakes;
+static uint8_t wakes, wakes2;
+static bool bton;
 static bool reported;
 #define BT_KEY_MS		150u	// a key event holds its key bit this long, past the core's debounce
 
@@ -156,6 +160,7 @@ void MCU_UART4_HANDLER(void)
 	} else if (c != MCU_UART_NONE) {
 		if (rx_bytes < BT_HEAD) {
 			rx_head[rx_bytes] = (uint8_t)c;
+			rx_at[rx_bytes] = (uint16_t)(hal_millis() - start_ms);
 		}
 		rx_bytes++;
 		bt_at_byte(&bt, (uint8_t)c);
@@ -208,6 +213,18 @@ uint32_t d578uv_bt_scan(void)
 		}
 		wakes++;
 	}
+	if (wakes2 < BT_WAKES && now - start_ms >= BT_WAKE2_MS + (uint32_t)wakes2 * BT_WAKE_GAP_MS) {
+		for (size_t i = 0; i < sizeof(bt_wake); i++) {
+			mcu_uart_put(MCU_UART4, bt_wake[i]);
+		}
+		wakes2++;
+	}
+	if (!bton && !answered && now - start_ms >= BT_BTON_MS) {
+		for (const char *t = "AT+BTON\r\n"; *t; t++) {
+			mcu_uart_put(MCU_UART4, (uint8_t)*t);
+		}
+		bton = true;
+	}
 	if (!reported && now - start_ms >= BT_REPORT_MS) {
 		reported = true;
 		char hex[BT_HEAD * 2 + 1];
@@ -220,6 +237,14 @@ uint32_t d578uv_bt_scan(void)
 		hex[2 * n] = 0;
 		dlog("bt: %lu bytes, %lu errors, %u probes, lines %lu, first %s", (unsigned long)rx_bytes,
 			(unsigned long)rx_errs, probes, (unsigned long)bt.lines, hex);
+		for (uint32_t i = 0; i < n; i += 6) {
+			uint32_t m = n - i < 6u ? n - i : 6u;
+			uint16_t t[6] = { 0 };
+			for (uint32_t k = 0; k < m; k++) {
+				t[k] = rx_at[i + k];
+			}
+			dlog("bt: byte %lu.. at %u %u %u %u %u %u ms", (unsigned long)i, t[0], t[1], t[2], t[3], t[4], t[5]);
+		}
 	}
 	if (!answered && probes < BT_PROBES && now - start_ms >= BT_PROBE_FIRST_MS + (uint32_t)probes * BT_PROBE_MS) {
 		for (const char *s = BT_AT_PROBE; *s; s++) {
