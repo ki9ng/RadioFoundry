@@ -27,21 +27,22 @@
 #define BT_WAKE_MS		500u
 #define BT_WAKE_GAP_MS		50u
 #define BT_WAKES		3u
-#define BT_PROBE_FIRST_MS	(BT_WAKE_MS + BT_WAKES * BT_WAKE_GAP_MS + 200u)
-#define BT_REPORT_MS		8000u	// one log line of what came back (bytes, errors, the first bytes and when)
+#define BT_PROBE_FIRST_MS	1300u	// after the module's +READY (1.14 s from power-on on the bench)
+#define BT_REPORT_MS		8000u	// what came back, as text (and again at BT_REPORT2_MS)
+#define BT_REPORT2_MS		20000u
 #define BT_WAKE2_MS		3000u	// the wake again: a reply to it comes back right after (bench diagnostic)
-#define BT_BTON_MS		1500u	// AT+BTON once (the vendor's Bluetooth on)
+#define BT_BTON_MS		5000u	// AT+BTON once: 100 ms after the +VER answer, or by this time without one
 static const uint8_t bt_wake[] = { 0xEE, 0x01, 0x06 };
-#define BT_HEAD			24u
+#define BT_HEAD			128u
 static volatile uint8_t rx_head[BT_HEAD];
-static volatile uint16_t rx_at[BT_HEAD];	// ms after start_ms
 static volatile uint32_t rx_bytes, rx_errs;
 #define BT_POWER_OFF_MS		400u	// the supply off this long at the start, so the timers below run from a power-on
 static volatile bool power_want = true;
 static bool cycled;
 static uint8_t wakes, wakes2;
 static bool bton;
-static bool reported;
+static uint8_t reported;
+static uint32_t ver_ms;
 #define BT_KEY_MS		150u	// a key event holds its key bit this long, past the core's debounce
 
 static bt_at_t bt;
@@ -163,7 +164,6 @@ void MCU_UART4_HANDLER(void)
 	} else if (c != MCU_UART_NONE) {
 		if (rx_bytes < BT_HEAD) {
 			rx_head[rx_bytes] = (uint8_t)c;
-			rx_at[rx_bytes] = (uint16_t)(hal_millis() - start_ms);
 		}
 		rx_bytes++;
 		bt_at_byte(&bt, (uint8_t)c);
@@ -240,34 +240,32 @@ uint32_t d578uv_bt_scan(void)
 		}
 		wakes2++;
 	}
-	if (!bton && !answered && now - start_ms >= BT_BTON_MS) {
+	if (bt.ver && ver_ms == 0) {
+		ver_ms = now;
+	}
+	if (!bton && ((ver_ms != 0 && now - ver_ms >= 100u) || now - start_ms >= BT_BTON_MS)) {
 		for (const char *t = "AT+BTON\r\n"; *t; t++) {
 			mcu_uart_put(MCU_UART4, (uint8_t)*t);
 		}
 		bton = true;
 	}
-	if (!reported && now - start_ms >= BT_REPORT_MS) {
-		reported = true;
-		char hex[BT_HEAD * 2 + 1];
+	if (reported < 2u && now - start_ms >= (reported == 0u ? BT_REPORT_MS : BT_REPORT2_MS)) {
+		reported++;
 		uint32_t n = rx_bytes < BT_HEAD ? rx_bytes : BT_HEAD;
-		for (uint32_t i = 0; i < n; i++) {
-			static const char h[] = "0123456789abcdef";
-			hex[2 * i] = h[rx_head[i] >> 4];
-			hex[2 * i + 1] = h[rx_head[i] & 15u];
-		}
-		hex[2 * n] = 0;
-		dlog("bt: %lu bytes, %lu errors, %u probes, lines %lu, first %s", (unsigned long)rx_bytes,
-			(unsigned long)rx_errs, probes, (unsigned long)bt.lines, hex);
-		for (uint32_t i = 0; i < n; i += 6) {
-			uint32_t m = n - i < 6u ? n - i : 6u;
-			uint16_t t[6] = { 0 };
+		dlog("bt: %lu bytes, %lu errors, %u probes, lines %lu, ver %u, links %u", (unsigned long)rx_bytes,
+			(unsigned long)rx_errs, probes, (unsigned long)bt.lines, bt.ver, bt.links);
+		for (uint32_t i = 0; i < n; i += 32u) {
+			char txt[33];
+			uint32_t m = n - i < 32u ? n - i : 32u;
 			for (uint32_t k = 0; k < m; k++) {
-				t[k] = rx_at[i + k];
+				uint8_t c = rx_head[i + k];
+				txt[k] = c == '\r' ? '<' : c == '\n' ? '|' : (c >= 0x20 && c < 0x7F) ? (char)c : '.';
 			}
-			dlog("bt: byte %lu.. at %u %u %u %u %u %u ms", (unsigned long)i, t[0], t[1], t[2], t[3], t[4], t[5]);
+			txt[m] = 0;
+			dlog("bt: %3lu %s", (unsigned long)i, txt);
 		}
 	}
-	if (!answered && probes < BT_PROBES && now - start_ms >= BT_PROBE_FIRST_MS + (uint32_t)probes * BT_PROBE_MS) {
+	if (!bt.ver && probes < BT_PROBES && now - start_ms >= BT_PROBE_FIRST_MS + (uint32_t)probes * BT_PROBE_MS) {
 		for (const char *s = BT_AT_PROBE; *s; s++) {
 			mcu_uart_put(MCU_UART4, (uint8_t)*s);
 		}

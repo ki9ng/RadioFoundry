@@ -44,6 +44,7 @@ typedef struct {
 	uint16_t payload;		// bytes of an +ADATA payload still to come
 	bool present;			// the module has answered
 	bool aprs_board;		// what answered is the APRS add-on board, not a Bluetooth module
+	bool ver;			// a +VER line came (the answer to BT_AT_PROBE, not just +READY)
 	bool fob_ptt, hf_ptt, mic_ptt;	// the three PTT sources
 	uint8_t key;			// the last +KEY code (BT_AT_KEY_MIN..MAX), 0 for none yet
 	uint32_t key_events;		// +KEY lines taken: a new one is a new key press
@@ -134,6 +135,7 @@ static inline void bt_at_line(bt_at_t *b, const char *s)
 	b->lines++;
 	b->present = true;
 	if (bt_at_starts(s, "+VER")) {
+		b->ver = true;
 		b->aprs_board = bt_at_starts(s + 4, ":APRS") || bt_at_starts(s + 4, "=APRS");
 	} else if (strcmp(s, "+PTTKEY=1") == 0) {
 		b->fob_ptt = true;
