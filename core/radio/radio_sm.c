@@ -4846,6 +4846,7 @@ static bool rx2_engage(radio_sm_t *sm, uint32_t now_ms)
 	}
 	sm->dual_at = sm->dual_sel;
 	sm->rx2_on = true;
+	sm->rx2_hz = t.rx_hz;
 	sm->rx2_look = false;
 	sm->rx2_relook = true;
 	rx2_publish(sm);
@@ -4931,6 +4932,7 @@ static bool rx2_service(radio_sm_t *sm, uint32_t now_ms)
 		sm->rx2_refresh_ms = now_ms;
 		if (rx2_settings(sm, (uint8_t)!sm->dual_sel, &t)) {
 			board.rx2->tune(&t);	// a codeplug edit or a squelch change; the same settings again send nothing
+			sm->rx2_hz = t.rx_hz;
 		}
 	}
 	if (st.sense) {
@@ -4943,6 +4945,47 @@ static bool rx2_service(radio_sm_t *sm, uint32_t now_ms)
 }
 #else
 static void rx2_release(radio_sm_t *sm) { (void)sm; }
+#endif
+
+#if CONFIG_DUAL_WATCH && CONFIG_APRS_RX
+// APRS in the background on the second receiver (ki9ng fork). With a hardware APRS decoder on its audio
+// (board.afsk->rx_frame, the AT-D578UV PLUS's APRS board) and APRS receive on: while dual watch is off it sits on the
+// APRS frequency, muted, unless the main receiver is on that frequency itself (its own decoder has it then) or APRS is
+// transmitting. Dual watch takes it over for the other channel (rx2_engage) and gives it back when it ends; then
+// rx2->aprs only says whether the other channel is the APRS frequency. Every poll
+static void rx2_aprs_service(radio_sm_t *sm, uint32_t now_ms)
+{
+	const hal_rx2_t *r = board.rx2;
+	if (r == NULL || board.afsk == NULL || board.afsk->rx_frame == NULL) {
+		return;
+	}
+	uint32_t hz = aprs_rx_freq();
+	bool main_there = sm->view.ch.mode == RADIO_MODE_FM && sm->view.ch.rx_hz == hz;
+	bool bg = hz != 0 && !sm->rx2_on && !dual_running(sm) && sm->aprs_phase == APRS_RF_OFF && !main_there;
+	if (!bg) {
+		if (sm->rx2_bg) {
+			sm->rx2_bg = false;
+			if (!sm->rx2_on) {
+				r->stop();	// dual watch may have it now: then it stays on the other channel
+			}
+		}
+	} else if (!sm->rx2_bg || now_ms - sm->rx2_bg_ms >= RADIO_RX2_REFRESH_MS) {
+		rx2_tune_t t;
+		memset(&t, 0, sizeof(t));
+		t.rx_hz = hz;
+		t.mode = RADIO_MODE_FM;
+		t.bw = RADIO_BW_25K;
+		t.squelch = sm->view.squelch;
+		t.rx_tone.type = TONE_NONE;
+		sm->rx2_bg_ms = now_ms;
+		sm->rx2_bg = r->tune(&t);	// the same settings again send nothing
+	}
+	bool aprs = sm->rx2_bg || (sm->rx2_on && hz != 0 && sm->rx2_hz == hz);
+	if (r->aprs != NULL && sm->rx2_aprs_out != (int8_t)aprs) {
+		sm->rx2_aprs_out = (int8_t)aprs;
+		r->aprs(aprs);
+	}
+}
 #endif
 
 static void scan_publish(radio_sm_t *sm)
@@ -8367,6 +8410,7 @@ void radio_sm_init(radio_sm_t *sm, uint32_t now_ms)
 	sm->red_out = -1;
 #if CONFIG_DUAL_WATCH
 	sm->rx2_audio_out = -1;
+	sm->rx2_aprs_out = -1;
 #endif
 	sm->volume_sent = -1;
 	sm->vol_step = RADIO_VOLUME_DEFAULT;
@@ -9841,6 +9885,9 @@ void radio_sm_poll(radio_sm_t *sm, uint32_t now_ms)
 		sm->rssi_published = sm->view.rssi_dbm;
 		changed(sm);
 	}
+#if CONFIG_DUAL_WATCH && CONFIG_APRS_RX
+	rx2_aprs_service(sm, now_ms);
+#endif
 #if CONFIG_APRS_AFSK
 	if (sm->aprs_phase != APRS_RF_OFF) {
 		aprs_rf_service(sm, &st, now_ms);	// on the APRS frequency: no squelch, scan or time-out here

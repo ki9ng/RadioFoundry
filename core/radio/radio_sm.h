@@ -386,6 +386,13 @@ typedef struct {
 	uint32_t rx2_try_ms;		// last time it was given the other channel, or found down
 	uint32_t rx2_refresh_ms;	// last time its settings went again
 	int8_t rx2_audio_out;		// last board.rx2->audio(), -1 = none yet
+	// APRS in the background on the second receiver (ki9ng fork, rx2_aprs_service): it is on the APRS frequency for
+	// the board's decoder with dual watch off; when it was last tuned; the other channel's frequency while dual watch
+	// holds it; the last board.rx2->aprs(), -1 = none yet
+	bool rx2_bg;
+	uint32_t rx2_bg_ms;
+	uint32_t rx2_hz;
+	int8_t rx2_aprs_out;
 	bool rx2_look;			// the second receiver only senses its channel: the main one went there to decode
 	bool rx2_relook;		// ... its carrier dropped since the last look ended, or that look played a call: the
 					// next one goes at once

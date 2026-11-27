@@ -122,6 +122,10 @@
 #define GPIO_LO_B_AM		0x0040u
 // Chip 1 GPIO bit 1: set passes side A's RF chip audio toward the speaker, clear holds it off (measured on a radio)
 #define GPIO_B_A_AUDIO		0x0002u
+// Chip 1 GPIO bit 2: set mutes side B toward the speaker AFTER the point where the PLUS's APRS board takes side B's
+// audio (ki9ng fork, measured 2026-11-27: B's voice silent, the board still decodes). Bit 0 and the level channel are
+// before that point: either one silences B for the board too
+#define GPIO_B_B_MUTE		0x0004u
 // Chip 1 GPIO bit 6: set connects side A's demodulated receive audio to PC0 (ADC channel 10, the receive tap,
 // rxtap_d578uv.c), ahead of the squelch and the speaker gate; clear, PC0 is flat (measured on a radio). Set in receive,
 // cleared while transmitting
@@ -234,6 +238,9 @@ static uint32_t bc_khz;			// the frequency it is tuned to
 static TaskHandle_t b_task;
 static bool b_on;			// tuned (tune() took a channel), running unless side A transmits
 static bool b_audio;			// the core gives side B the speaker
+#if D578UV_BT_APRS
+static bool b_aprs;			// side B is on the APRS frequency for the APRS board (hal_rx2_t.aprs, ki9ng fork)
+#endif
 static bool b_open;			// its squelch is open
 static uint8_t b_close_polls;		// polls in a row above the close level
 static uint32_t b_hz;
@@ -711,6 +718,16 @@ static void audio_route(void)
 	int16_t code_b = swap ? level_code_vol : kt_out || level_code_b < 0 ? level_code_vol : level_code_b;
 	bool zero_a = swap ? vol_b_zero : vol_zero;
 	bool zero_b = swap ? vol_zero : level_code_b < 0 ? vol_zero : vol_b_zero;
+	// Side B for the APRS board (b_aprs): it plays only while the core gives it the speaker with knob B up; otherwise
+	// its level goes to full for the board and GPIO_B_B_MUTE keeps it off the speaker (stock pins B's level the same
+	// way, FUN_0809f7ec). Not as a speaker source then: the amplifier stays off for it and side A's level is kept
+	bool b_feed = false;
+#if D578UV_BT_APRS && D578UV_LEVEL_IC && CONFIG_DUAL_WATCH
+	b_feed = b_aprs && b_on && !AM_ON && !(b && !zero_b);
+	if (b_feed) {
+		b = false;
+	}
+#endif
 	// In DMR side A's RF chip audio is the demodulator's 4FSK, which the gate keeps off the speaker but for a beep or
 	// the KTMicro receiver; the baseband's voice reaches the speaker without it
 	// A beep's silent lead (beep_tone(): the chip's output held silent) opens the gate and powers the amplifier ahead
@@ -726,7 +743,11 @@ static void audio_route(void)
 		}
 #endif
 		level_set(0, beep_quiet ? 0 : level_a_want);
+#if D578UV_LEVEL_IC
+		level_set(1, b_feed ? level_code(32) : (b || kt_out) && code_b >= 0 ? (uint8_t)code_b : 0);
+#else
 		level_set(1, (b || kt_out) && code_b >= 0 ? (uint8_t)code_b : 0);
+#endif
 	}
 	bool b_loud = b && !zero_b;
 	// A beep sounds while either knob is up (beep_level_code())
@@ -739,6 +760,7 @@ static void audio_route(void)
 	}
 	if (chips_ready && !transmitting) {
 		chip1_gpio(GPIO_B_A_AUDIO, a_rf ? GPIO_B_A_AUDIO : 0);
+		chip1_gpio(GPIO_B_B_MUTE, b_feed ? GPIO_B_B_MUTE : 0);
 	}
 	if (amp) {
 		mcu_pin_write(PIN_SPK_MUTE, false);
@@ -1535,6 +1557,14 @@ static void b_status(rx2_status_t *st)
 	bus_unlock(saved);
 }
 
+#if D578UV_BT_APRS
+static void b_aprs_on(bool on)
+{
+	b_aprs = on;
+	audio_route();
+}
+#endif
+
 static void b_audio_on(bool on)
 {
 	b_audio = on;
@@ -1546,6 +1576,9 @@ const hal_rx2_t d578uv_rx2 = {
 	.stop = b_stop,
 	.status = b_status,
 	.audio = b_audio_on,
+#if D578UV_BT_APRS
+	.aprs = b_aprs_on,
+#endif
 };
 #else
 static void b_pause(void) {}
