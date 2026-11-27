@@ -235,6 +235,27 @@ int main(void)
 	test_errors();
 	test_raw_payload();
 	test_replies();
+	// A KISS frame without its +ADATA header (the PLUS's APRS board): FEND to FEND to the raw sink, not errors
+	{
+		static uint8_t got[16];
+		static unsigned ng;
+		bt_at_t k;
+		bt_at_init(&k);
+		k.raw_sink = NULL;
+		const uint8_t fr[] = { 0xC0, 0x00, 0x41, 0x42, 0xC0 };
+		uint32_t e0 = k.errors;
+		for (unsigned j = 0; j < sizeof(fr); j++) {
+			bt_at_byte(&k, fr[j]);
+		}
+		CHECK(k.errors == e0 && k.bare_frames == 1u && !k.bare && k.raw_bytes == sizeof(fr));
+		const char *ln = "+READY\r\n";
+		for (; *ln; ln++) {
+			bt_at_byte(&k, (uint8_t)*ln);
+		}
+		CHECK(k.lines == 1u);
+		(void)got; (void)ng;
+	}
+
 	if (failures) {
 		printf("# btAtTest FAILED (%d)\n", failures);
 		return 1;

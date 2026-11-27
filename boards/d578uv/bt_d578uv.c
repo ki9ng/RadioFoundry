@@ -36,6 +36,12 @@ static const uint8_t bt_wake[] = { 0xEE, 0x01, 0x06 };
 #define BT_HEAD			128u
 static volatile uint8_t rx_head[BT_HEAD];
 static volatile uint32_t rx_bytes, rx_errs;
+#define BT_TAIL			96u	// the last bytes from the module, logged when errors jump (BT_TAIL_ERRS within a scan)
+#define BT_TAIL_ERRS		8u
+#define BT_TAIL_GAP_MS		5000u
+static volatile uint8_t rx_tail[BT_TAIL];
+static volatile uint32_t rx_tail_n;
+static uint32_t tail_errs_seen, tail_ms;
 #define BT_POWER_OFF_MS		400u	// the supply off this long at the start, so the timers below run from a power-on
 static volatile bool power_want = true;
 static bool cycled;
@@ -165,6 +171,8 @@ void MCU_UART4_HANDLER(void)
 		if (rx_bytes < BT_HEAD) {
 			rx_head[rx_bytes] = (uint8_t)c;
 		}
+		rx_tail[rx_tail_n % BT_TAIL] = (uint8_t)c;
+		rx_tail_n++;
 		rx_bytes++;
 		bt_at_byte(&bt, (uint8_t)c);
 	}
@@ -248,6 +256,27 @@ uint32_t d578uv_bt_scan(void)
 			mcu_uart_put(MCU_UART4, (uint8_t)*t);
 		}
 		bton = true;
+	}
+	if (bt.errors >= tail_errs_seen + BT_TAIL_ERRS && (tail_ms == 0 || now - tail_ms >= BT_TAIL_GAP_MS)) {
+		tail_errs_seen = bt.errors;
+		tail_ms = now | 1u;
+		uint32_t end = rx_tail_n, n = end < BT_TAIL ? end : BT_TAIL;
+		dlog("bt: errors %lu, last %lu bytes (bare kiss %lu):", (unsigned long)bt.errors, (unsigned long)n,
+			(unsigned long)bt.bare_frames);
+		static const char hx[] = "0123456789abcdef";
+		for (uint32_t i = 0; i < n; i += 24u) {
+			char line[49];
+			uint32_t m = n - i < 24u ? n - i : 24u;
+			for (uint32_t k = 0; k < m; k++) {
+				uint8_t c = rx_tail[(end - n + i + k) % BT_TAIL];
+				line[2 * k] = hx[c >> 4];
+				line[2 * k + 1] = hx[c & 15u];
+			}
+			line[2 * m] = 0;
+			dlog("bt: %s", line);
+		}
+	} else if (bt.errors < tail_errs_seen) {
+		tail_errs_seen = bt.errors;
 	}
 	if (reported < 2u && now - start_ms >= (reported == 0u ? BT_REPORT_MS : BT_REPORT2_MS)) {
 		reported++;

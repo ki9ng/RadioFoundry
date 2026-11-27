@@ -52,6 +52,9 @@ typedef struct {
 	uint32_t lines, errors;		// lines taken; bytes or lines dropped (diagnostics)
 	bool payload_first;		// the next byte is an +ADATA payload's first: it decides lines or raw
 	bool raw;			// the payload under way is raw bytes (its first byte wasn't '+')
+	bool bare;			// a KISS frame with no +ADATA header under way: raw up to its closing FEND
+	bool bare_body;		// ... and a byte past its opening FEND has come
+	uint32_t bare_frames;		// such frames taken (diagnostics)
 	uint32_t raw_bytes;		// raw payload bytes taken
 	uint32_t oks, errs;		// OK and ERR replies from the module
 	void (*raw_sink)(uint8_t c);	// where raw payload bytes go (NULL: dropped); called in the UART interrupt
@@ -182,6 +185,21 @@ static inline void bt_at_byte(bt_at_t *b, uint8_t c)
 		b->payload_first = false;
 		b->raw = c != '+';
 	}
+	if (b->bare) {
+		// A KISS frame the module passed on without its +ADATA header (seen on the AT-D578UV PLUS's APRS board, ki9ng
+		// fork 2026-11-27): FEND opens it, the next FEND past a byte of it closes it
+		b->raw_bytes++;
+		if (b->raw_sink != NULL) {
+			b->raw_sink(c);
+		}
+		if (c == 0xC0u && b->bare_body) {
+			b->bare = false;
+			b->bare_frames++;
+		} else if (c != 0xC0u) {
+			b->bare_body = true;
+		}
+		return;
+	}
 	if (b->raw) {
 		b->raw_bytes++;
 		if (b->raw_sink != NULL) {
@@ -189,6 +207,15 @@ static inline void bt_at_byte(bt_at_t *b, uint8_t c)
 		}
 		if (--b->payload == 0) {
 			b->raw = false;
+		}
+		return;
+	}
+	if (b->n == 0 && c == 0xC0u && b->payload == 0) {
+		b->bare = true;
+		b->bare_body = false;
+		b->raw_bytes++;
+		if (b->raw_sink != NULL) {
+			b->raw_sink(c);
 		}
 		return;
 	}
