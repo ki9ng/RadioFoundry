@@ -719,12 +719,15 @@ static void audio_route(void)
 	bool zero_a = swap ? vol_b_zero : vol_zero;
 	bool zero_b = swap ? vol_zero : level_code_b < 0 ? vol_zero : vol_b_zero;
 	// Side B for the APRS board (b_aprs): it plays only while the core gives it the speaker with knob B up; otherwise
-	// its level goes to full for the board and GPIO_B_B_MUTE keeps it off the speaker (stock pins B's level the same
-	// way, FUN_0809f7ec). Not as a speaker source then: the amplifier stays off for it and side A's level is kept
-	bool b_feed = false;
+	// GPIO_B_B_MUTE keeps it off the speaker and, while its squelch is open, its level goes to full for the board
+	// (stock pins B's level the same way, FUN_0809f7ec). With the squelch shut the level stays at 0: fed noise, the
+	// board's modem sends 400-byte junk "frames" that crowd the UART (bench, 2026-11-27). Not a speaker source then:
+	// the amplifier stays off for it and side A's level is kept
+	bool b_mute = false, b_feed = false;
 #if D578UV_BT_APRS && D578UV_LEVEL_IC && CONFIG_DUAL_WATCH
-	b_feed = b_aprs && b_on && !AM_ON && !(b && !zero_b);
-	if (b_feed) {
+	if (b_aprs && b_on && !AM_ON && !(b && !zero_b)) {
+		b_mute = true;
+		b_feed = b_open && !transmitting;
 		b = false;
 	}
 #endif
@@ -760,7 +763,7 @@ static void audio_route(void)
 	}
 	if (chips_ready && !transmitting) {
 		chip1_gpio(GPIO_B_A_AUDIO, a_rf ? GPIO_B_A_AUDIO : 0);
-		chip1_gpio(GPIO_B_B_MUTE, b_feed ? GPIO_B_B_MUTE : 0);
+		chip1_gpio(GPIO_B_B_MUTE, b_mute ? GPIO_B_B_MUTE : 0);
 	}
 	if (amp) {
 		mcu_pin_write(PIN_SPK_MUTE, false);
