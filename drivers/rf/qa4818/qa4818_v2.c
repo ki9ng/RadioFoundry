@@ -13,6 +13,13 @@
 #include "qa4818_v2.h"
 #include "rf/subaudio/subaudio.h"
 
+// The receive audio's level: 0x30 = 0x5F00 | gain. The vendor takes the gain from a table by the max-volume setting,
+// analog FM 101 103 104 106 107 109 111 114 116 (digital 96-111, a third set 92-107), +8 (to 0x7F at most) with one
+// more flag. 116 is the top setting's (KI9NG's stock codeplug: max speaker volume 10); 107, the middle one's, was quiet
+#ifndef V2_AF_GAIN
+#define V2_AF_GAIN	116u
+#endif
+
 #define MHZ(x)		((uint32_t)(x) * 1000000u)
 #define INIT_HZ		435125000u	// both inits tune here, as the QA4818's do
 #define PROBE_TRIES	100u
@@ -119,7 +126,7 @@ void qa4818_v2_init_lo(qa4818_t *c, bool trx_v2)
 	wr(c, 0x5F, 0x0768);
 	wr(c, 0x2A, 0x1081);
 	lo_band(c, INIT_HZ);
-	wr(c, 0x30, 0x5F6B);
+	wr(c, 0x30, 0x5F00u | V2_AF_GAIN);
 	qa4818_v2_tune(c, INIT_HZ);
 	wr(c, 0x59, 0x221C);
 	wr(c, 0x29, 0x1090);
@@ -209,7 +216,7 @@ void qa4818_v2_init_trx(qa4818_t *c, bool side_b)
 	wr(c, 0x5F, 0x0768);
 	wr(c, 0x60, 0x0300);
 	wr(c, 0x2A, 0x1081);
-	wr(c, 0x30, 0x5F6B);
+	wr(c, 0x30, 0x5F00u | V2_AF_GAIN);
 	qa4818_v2_path(c, false);
 	wr(c, 0x19, 0x0381);
 	c->v2_r19 = 0x0381;

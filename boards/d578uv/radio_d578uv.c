@@ -293,6 +293,7 @@ static uint16_t a_rssi_last;		// side A's raw RSSI at the last poll
 #define RX_SETTLE_MS	40u
 static uint32_t rx_setup_ms;		// hal_millis() at side A's last receive set-up, 0 before any
 static uint32_t b_setup_ms;		// ... side B's
+static bool tone_beep;		// the newer RF chip: a beep plays on PB9 (beep_tone_v2())
 static bool beeping;			// side A's chip sounds a beep instead of its receiver (beep_tone())
 static bool beep_quiet;			// side A's level held at its lowest while a beep starts or stops
 static uint16_t beep_hz;		// the beep sounding: its tone and the chip's gain, for a set-up during it
@@ -696,11 +697,12 @@ static void audio_route(void)
 	// A beep's silent lead (beep_tone(): the chip's output held silent) opens the gate and powers the amplifier ahead
 	// of the tone, so the amplifier comes on with its input held and settles before anything sounds
 	bool lead = beep_hz != 0 && !beeping;
+	bool tb = tone_beep;	// a PB9 beep (beep_tone_v2()): amplifier on, gate as the receiver wants
 	bool a_rf = beeping || lead || kt_out || (mode != RADIO_MODE_DMR && main_audio && a_lost_ms == 0);
 	if (level_code_vol >= 0) {
 		level_a_want = a_rf || !b ? (uint8_t)code_a : 0;
 #if D578UV_LEVEL_IC
-		if (beeping || lead) {
+		if (beeping || lead || tb) {
 			level_a_want = beep_level_code();
 		}
 #endif
@@ -709,9 +711,9 @@ static void audio_route(void)
 	}
 	bool b_loud = b && !zero_b;
 	// A beep sounds while either knob is up (beep_level_code())
-	bool beep_loud = (beeping || lead) && !(vol_zero && vol_b_zero);
-	bool want = !spk_amp_off(transmitting, beeping || lead || kt_out || main_audio || b, !zero_a || b_loud || beep_loud);
-	bool amp = spk_hang(&amp_hang, want, beeping || lead, !transmitting && (!vol_zero || beep_loud), hal_millis());
+	bool beep_loud = (beeping || lead || tb) && !(vol_zero && vol_b_zero);
+	bool want = !spk_amp_off(transmitting, beeping || lead || tb || kt_out || main_audio || b, !zero_a || b_loud || beep_loud);
+	bool amp = spk_hang(&amp_hang, want, beeping || lead || tb, !transmitting && (!vol_zero || beep_loud), hal_millis());
 	// Off before the gate shuts, on after it opens: the gate never switches with the amplifier coming on or going off
 	if (!amp) {
 		mcu_pin_write(PIN_SPK_MUTE, true);
@@ -2496,6 +2498,31 @@ static void status(radio_status_t *st)
 #ifndef D578UV_BEEP_LEAD_MS
 #define D578UV_BEEP_LEAD_MS	40
 #endif
+// The newer RF chip (ki9ng fork): the beep is the vendor's way, a tone synthesised as PWM on PB9 (TIM4 CH4 timed by
+// TIM5: the DTMF engine, tone_d578uv.c), with the speaker's amplifier on (PA7) and the receiver's audio gate left
+// shut (audio_route(): tone_beep is no `beeping`). Opening the gate let the chip's unsquelched noise through as a blip
+static void beep_tone_v2(uint16_t hz, uint8_t level)
+{
+	if (hz == 0 || level == 0) {
+		if (tone_beep) {
+#if CONFIG_DTMF
+			d578uv_tone_stop();
+#endif
+			tone_beep = false;
+			audio_route();
+		}
+		return;
+	}
+#if D578UV_LEVEL_IC
+	beep_pct = level;
+#endif
+#if CONFIG_DTMF
+	d578uv_dtmf_start(hz, 0);	// one tone: the second at 0 Hz adds nothing
+	tone_beep = true;
+	audio_route();
+#endif
+}
+
 static void beep_tone(uint16_t hz, uint8_t level)
 {
 	if (hz != 0 && (transmitting || !have_rx || AM_ON || BC_HEARD)) {
@@ -2503,6 +2530,10 @@ static void beep_tone(uint16_t hz, uint8_t level)
 	}
 	if (dmr_heard) {
 		hz = 0;
+	}
+	if (chip_if.v2) {
+		beep_tone_v2(hz, level);
+		return;
 	}
 	if (hz == 0 && beep_hz == 0) {
 		return;
