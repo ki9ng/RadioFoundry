@@ -115,6 +115,23 @@ static void test_pa_drive(void)
 	CHECK(pa_drive(true, 4, 100) == 0);
 }
 
+// 220 MHz: 200-300 MHz is the band, two power steps, the factory value << 4
+static void test_220(void)
+{
+	CHECK(!is_220(174000000u));
+	CHECK(is_220(223500000u));
+	CHECK(!is_220(300000001u));
+	CHECK(level_220(223500000u, 0) == 0);
+	CHECK(level_220(223500000u, 1) == 1);
+	CHECK(level_220(223500000u, 3) == 1);
+	CHECK(level_220(146520000u, 3) == 3);
+	CHECK(level_220(446000000u, 2) == 2);
+	CHECK(pa_drive_220(0, 40) == 640);
+	CHECK(pa_drive_220(1, 90) == 1440);
+	CHECK(pa_drive_220(1, 0) == 0);
+	CHECK(pa_drive_220(2, 90) == 0);
+}
+
 int main(void)
 {
 	test_am_lo();
@@ -122,6 +139,7 @@ int main(void)
 	test_trim_lookup();
 	test_trim_tx();
 	test_pa_drive();
+	test_220();
 	if (failures) {
 		printf("d578uvRfPlanTest: %d failure(s)\n", failures);
 		return 1;

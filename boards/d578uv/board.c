@@ -26,6 +26,7 @@
 
 static const band_t bands[] = {
 	{ 136000000, 174000000, true },
+	{ 222000000, 225000000, true },	// 1.25 m (ki9ng fork): the PLUS's third band, on the VHF path
 	{ 400000000, 480000000, true },
 #if CONFIG_AM_RX
 	{ 108000000, 136000000, false },	// the air band, AM receive only
@@ -39,8 +40,11 @@ static const band_t bands[] = {
 // differs: 45 W on UHF, 50 W on VHF
 static const char *const power_names[] = { "1W", "10W", "25W", "45W" };
 static const char *const power_names_vhf[] = { "1W", "10W", "25W", "50W" };
+// 220: two steps, every level above Low as Mid (the vendor's; rf_plan.h level_220). Watts not yet measured
+static const char *const power_names_220[] = { "Low", "Mid", "Mid", "Mid" };
 static const board_power_band_t power_bands[] = {
 	{ 136000000u, 174000000u, power_names_vhf },
+	{ 222000000u, 225000000u, power_names_220 },
 	{ 400000000u, 480000000u, power_names },
 };
 

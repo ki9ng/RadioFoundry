@@ -157,7 +157,7 @@
 #define CAL_PWR_VHF		0x400u		// four 45-byte tables every 0x40, 136-175 MHz in 1 MHz steps (then 220-225)
 #define CAL_PWR_UHF_REF		0x28u
 #define CAL_PWR_VHF_REF		9u
-#define CAL_AGC_VHF_A		0x500u		// 25 entries, 2 MHz steps from 136 MHz
+#define CAL_AGC_VHF_A		0x500u		// 25 entries, 2 MHz steps: 0-19 from 136 MHz, 20-24 from 220 MHz
 #define CAL_AGC_UHF_A		0x520u		// 25 entries, 5 MHz steps from 400 MHz
 #define CAL_AGC_VHF_B		0x640u		// side B's, laid out as side A's
 #define CAL_AGC_UHF_B		0x660u
@@ -928,8 +928,15 @@ static uint8_t rx_gain_code(uint32_t hz, bool side_b)
 		code = (uint8_t)(cal_uhf[blk] + cal_byte(t + CAL_AGC_UHF_REF, &ok) - cal_byte(t + (idx < 25 ? idx : 24), &ok));
 	} else {
 		uint32_t t = side_b ? CAL_AGC_VHF_B : CAL_AGC_VHF_A;
-		uint32_t idx = hz >= 136000000u ? (hz - 136000000u) / 2000000u : 0;
-		code = (uint8_t)(cal_vhf[blk] + cal_byte(t + CAL_AGC_VHF_REF, &ok) - cal_byte(t + (idx < 20 ? idx : 19), &ok));
+		uint32_t idx;
+		if (is_220(hz)) {
+			idx = hz >= 220000000u ? 20u + (hz - 220000000u) / 2000000u : 20u;
+			idx = idx < 25u ? idx : 24u;
+		} else {
+			idx = hz >= 136000000u ? (hz - 136000000u) / 2000000u : 0;
+			idx = idx < 20u ? idx : 19u;
+		}
+		code = (uint8_t)(cal_vhf[blk] + cal_byte(t + CAL_AGC_VHF_REF, &ok) - cal_byte(t + idx, &ok));
 	}
 	return ok ? code : GAIN_DEFAULT;
 }
@@ -951,6 +958,13 @@ static uint8_t tx_dac(uint32_t hz, uint8_t p)
 		table = CAL_PWR_UHF + 0x80u * p;
 		idx = (hz - 400000000u) / 1000000u;
 		ref = CAL_PWR_UHF_REF;
+	} else if (is_220(hz)) {
+		if (hz < 220000000u || hz >= 226000000u) {
+			return 0;
+		}
+		table = CAL_PWR_VHF + 0x40u * p;
+		idx = 39u + (hz - 220000000u) / 1000000u;
+		ref = CAL_PWR_VHF_REF;
 	} else {
 		if (hz < 136000000u || hz >= 176000000u) {
 			return 0;
@@ -971,6 +985,10 @@ static volatile uint16_t drive_next;
 // hal_radio_t.tx_drive_level: the DAC word (12 bits) for a level at hz (pa_drive); 0 without calibration there
 static uint16_t tx_drive_level(uint32_t hz, uint8_t level)
 {
+	level = level_220(hz, level);
+	if (is_220(hz)) {
+		return pa_drive_220(level, tx_dac(hz, level));
+	}
 	return pa_drive(hz > UHF_FROM_HZ, level, tx_dac(hz, level));
 }
 
@@ -2158,6 +2176,7 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *t)
 	if (!board_in_band(hz, true)) {
 		return false;
 	}
+	power = level_220(hz, power);	// 220: Low or Mid, as the vendor's (rf_plan.h)
 	uint16_t dac = tx_drive_level(hz, power);
 	if (dac == 0) {
 		return false;	// no calibration here: the override doesn't stand in for one

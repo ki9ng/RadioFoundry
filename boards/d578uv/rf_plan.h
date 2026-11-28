@@ -119,4 +119,25 @@ static inline uint16_t pa_drive(bool uhf, uint8_t level, uint8_t factory)
 	return (uint16_t)(((uint32_t)factory * 16u * scale[uhf][level - 1u] + 500u) / 1000u);
 }
 
+// --- 220 MHz (ki9ng fork). The vendor firmware (AT 2.08) takes 200-300 MHz as the 1.25 m band: the VHF band pair and
+// VHF calibration block, the power tables' cells 39-44 (220-225 MHz), the AGC tables' entries from 20 (2 MHz steps
+// from 220 MHz), the newer RF chip's drive word 2, and only two power steps: every level above Low transmits as
+// level 1 (Mid). Hz here ---
+static inline bool is_220(uint32_t hz)
+{
+	return hz >= 200000000u && hz <= 300000000u;
+}
+
+static inline uint8_t level_220(uint32_t hz, uint8_t level)
+{
+	return is_220(hz) && level != 0 ? 1u : level;
+}
+
+// The PA DAC word at 220 for level 0 or 1: the vendor's own, the factory value << 4. Not yet checked on a wattmeter,
+// so not scaled like pa_drive's. 0 where the factory value is 0
+static inline uint16_t pa_drive_220(uint8_t level, uint8_t factory)
+{
+	return factory == 0 || level > 1u ? 0 : (uint16_t)(factory * 16u);
+}
+
 #endif
