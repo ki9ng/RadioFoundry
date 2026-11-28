@@ -480,22 +480,11 @@ static size_t build_beacon(const position_fix_t *f)
 	r.ambiguity = aprs_s.cfg.compressed ? 0 : position_ambiguity();
 	r.comment = aprs_s.comment;
 #if CONFIG_APRS_QSY
-	// Our voice channel first, then the codeplug's comment, cut at APRS_COMMENT_MAX as a comment always is
-	char c[APRS_COMMENT_MAX + 1];
-	size_t k = aprs_freq_build(&aprs_s.voice, c, APRS_COMMENT_MAX);
-	if (k != 0) {
-		size_t n = strlen(aprs_s.comment);
-		if (n != 0 && k + 1u < APRS_COMMENT_MAX) {
-			c[k++] = ' ';
-			if (n > APRS_COMMENT_MAX - k) {
-				n = APRS_COMMENT_MAX - k;
-			}
-			memcpy(c + k, aprs_s.comment, n);
-			k += n;
-		}
-		c[k] = '\0';
-		r.comment = c;
-	}
+	// Our voice channel opens the comment, ahead of the altitude (freqspec: the comment's first 10 bytes)
+	char lead[APRS_COMMENT_MAX + 1];
+	size_t k = aprs_freq_build(&aprs_s.voice, lead, sizeof(lead) - 1u);
+	lead[k] = '\0';
+	r.lead = lead;
 #endif
 	return aprs_build_position(&r, aprs_s.info, sizeof(aprs_s.info));
 }

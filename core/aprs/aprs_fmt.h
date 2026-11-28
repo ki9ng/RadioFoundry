@@ -39,6 +39,9 @@ typedef struct {
 	bool messaging;		// '=' (we take messages) rather than '!'
 	uint8_t ambiguity;	// uncompressed only: 0..4 trailing digits blanked (about 1 nm .. 60 nm)
 	const char *comment;	// NULL or "" for none; cut at APRS_COMMENT_MAX
+	// NULL or "": text that opens the comment, ahead of the altitude (a voice frequency: freqspec wants it in the
+	// comment's first 10 bytes); it and the comment share APRS_COMMENT_MAX, a space between them
+	const char *lead;
 } aprs_report_t;
 
 // The information field of a position report; returns the length (0 if it doesn't fit)

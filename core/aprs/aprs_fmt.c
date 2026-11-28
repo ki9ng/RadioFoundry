@@ -215,8 +215,19 @@ size_t aprs_build_position(const aprs_report_t *r, char *out, size_t max)
 			put_u(&o, p->speed_kn > 999u ? 999u : p->speed_kn, 3);
 		}
 	}
+	size_t room = APRS_COMMENT_MAX;
+	if (r->lead != NULL && r->lead[0] != '\0') {
+		size_t n = strnlen(r->lead, APRS_COMMENT_MAX);
+		put_s(&o, r->lead, n);
+		room -= n;
+		bool more = p->alt_m != APRS_ALT_NONE || (r->comment != NULL && r->comment[0] != '\0');
+		if (more && room > 0) {
+			put_c(&o, ' ');
+			room--;
+		}
+	}
 	put_altitude(&o, p->alt_m);
-	put_s(&o, r->comment, APRS_COMMENT_MAX);
+	put_s(&o, r->comment, room);
 	return finish(&o);
 }
 

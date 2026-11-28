@@ -687,7 +687,7 @@ static void station_draw(void)
 	sb_init(&b, buf, sizeof buf);
 	sb_str(&b, s.direct ? TR(APRS_VALUE_DIRECT, "Direct") : TR(APRS_VALUE_DIGI, "Digi"));
 	sb_chr(&b, ' ');
-	char age[12];
+	char age[24];	// both alternates ("13s ago", "13s") and their marks: 12 cut a two-digit age's unit
 	ui_sb_age(age, sizeof age, ui_st.now_ms - s.heard_ms);
 	sb_str(&b, age);
 	station_line(x, &ly, lb, buf, ui_col.dim);

@@ -1551,6 +1551,39 @@ static void test_freqspec(void)
 		CHECK(f.hz == b.hz && f.tone == b.tone && f.tone_kind == b.tone_kind && f.offset_10k == 60,
 		      "round trip %u", tones[i]);
 	}
+	// In a position: the frequency opens the comment, ahead of the altitude and the codeplug comment, all within
+	// APRS_COMMENT_MAX (the bench beacon of 2026-11-27 had the altitude first: "/A=000545146.685MHz ...")
+	{
+		aprs_report_t r;
+		memset(&r, 0, sizeof(r));
+		r.pos.lat = 415428333;
+		r.pos.lon = -871358333;
+		r.pos.course = APRS_COURSE_NONE;
+		r.pos.speed_kn = APRS_SPEED_NONE;
+		r.pos.alt_m = 166;
+		r.pos.sym_table = '/';
+		r.pos.sym_code = '[';
+		r.lead = "146.685MHz T173 -060";
+		r.comment = "Hello";
+		char info[100];
+		size_t n = aprs_build_position(&r, info, sizeof(info));
+		info[n] = '\0';
+		const char *c = strchr(info, '[') + 1;
+		CHECK(strcmp(c, "146.685MHz T173 -060 /A=000545Hello") == 0, "lead first \"%s\"", c);
+		aprs_parsed_t q;
+		CHECK(aprs_parse(NULL, (const uint8_t *)info, n, &q) && q.pos.alt_m == 166, "altitude still read");
+		size_t k = aprs_freq_parse(q.text, q.text_len, &f);
+		CHECK(f.hz == 146685000u && f.tone == 1738 && k == 21, "frequency read back");
+		r.pos.alt_m = APRS_ALT_NONE;
+		r.comment = NULL;
+		n = aprs_build_position(&r, info, sizeof(info));
+		info[n] = '\0';
+		CHECK(strcmp(strchr(info, '[') + 1, "146.685MHz T173 -060") == 0, "lead alone, no trailing space");
+		r.comment = "0123456789012345678901234567890123456789";	// 40: cut so the whole comment is 43
+		n = aprs_build_position(&r, info, sizeof(info));
+		info[n] = '\0';
+		CHECK(strlen(strchr(info, '[') + 1) == APRS_COMMENT_MAX, "shared limit %zu", strlen(strchr(info, '[') + 1));
+	}
 	// The band plan's offsets
 	CHECK(aprs_freq_std_offset_hz(146685000u) == -600000 && aprs_freq_std_offset_hz(147240000u) == 600000 &&
 	      aprs_freq_std_offset_hz(146520000u) == 0 && aprs_freq_std_offset_hz(444100000u) == 5000000 &&
