@@ -778,3 +778,200 @@ uint16_t aprs_bearing_deg(int32_t lat1, int32_t lon1, int32_t lat2, int32_t lon2
 	uint16_t d = (uint16_t)(b + 0.5f);
 	return d >= 360u ? 0u : d;
 }
+
+// --- A voice frequency in a comment (aprs.org freqspec.txt) ---
+
+// The 50 standard CTCSS tones (Hz x 10): "T107" names 107.2 Hz, the one tone whose whole hertz are 107. Each tone's
+// whole hertz differ, so the three digits find it. A value off the list stays as its whole hertz
+static const uint16_t freq_ctcss[50] = {
+	670, 693, 719, 744, 770, 797, 825, 854, 885, 915, 948, 974, 1000, 1035, 1072, 1109, 1148, 1188, 1230, 1273,
+	1318, 1365, 1413, 1462, 1514, 1567, 1598, 1622, 1655, 1679, 1713, 1738, 1773, 1799, 1835, 1862, 1899, 1928,
+	1966, 1995, 2035, 2065, 2107, 2181, 2257, 2291, 2336, 2418, 2503, 2541,
+};
+
+static uint16_t freq_tone_tenths(uint16_t hz)
+{
+	for (size_t i = 0; i < sizeof(freq_ctcss) / sizeof(freq_ctcss[0]); i++) {
+		if (freq_ctcss[i] / 10u == hz) {
+			return freq_ctcss[i];
+		}
+	}
+	return (uint16_t)(hz * 10u);
+}
+
+static bool freq_digits(const char *s, size_t n, uint32_t *v, char max)
+{
+	uint32_t x = 0;
+	for (size_t i = 0; i < n; i++) {
+		if (s[i] < '0' || s[i] > max) {
+			return false;
+		}
+		x = x * (max == '7' ? 8u : 10u) + (uint32_t)(s[i] - '0');
+	}
+	*v = x;
+	return true;
+}
+
+static char freq_lower(char c)
+{
+	return c >= 'A' && c <= 'Z' ? (char)(c + 32) : c;
+}
+
+// One field after the frequency (4 characters, or a range "R25m" / "R100k"): true if it is one we know
+static bool freq_field(const char *t, size_t k, aprs_freq_t *f)
+{
+	uint32_t v;
+	if (k == 4 && (t[0] == 'T' || t[0] == 't') && t[1] == 'o' && t[2] == 'f' && t[3] == 'f') {
+		f->toff = true;
+		f->tone_kind = APRS_FREQ_TONE_NONE;
+		return true;
+	}
+	if (k == 4 && (t[0] == '1' || t[0] == 'l') && t[1] == '7' && t[2] == '5' && t[3] == '0') {
+		return true;	// a 1750 Hz tone burst: nothing to set up
+	}
+	if (k == 4 && (t[0] == '+' || t[0] == '-') && freq_digits(t + 1, 3, &v, '9')) {
+		f->offset_10k = (int16_t)(t[0] == '-' ? -(int32_t)v : (int32_t)v);
+		return true;
+	}
+	if (k == 4) {
+		char c = freq_lower(t[0]);
+		bool lower = t[0] == c;
+		if ((c == 't' || c == 'c') && freq_digits(t + 1, 3, &v, '9') && v >= 60u && v <= 260u) {
+			f->tone_kind = c == 't' ? APRS_FREQ_TONE_ENC : APRS_FREQ_TONE_SQL;
+			f->tone = freq_tone_tenths((uint16_t)v);
+			f->narrow = lower;
+			return true;
+		}
+		if (c == 'd' && freq_digits(t + 1, 3, &v, '7')) {
+			f->tone_kind = APRS_FREQ_TONE_DCS;
+			f->tone = (uint16_t)v;
+			f->narrow = lower;
+			return true;
+		}
+	}
+	if (k >= 3 && k <= 5 && t[0] == 'R' && (t[k - 1] == 'm' || t[k - 1] == 'k') && freq_digits(t + 1, k - 2, &v, '9')) {
+		return true;	// the range: shown in the comment, not used
+	}
+	return false;
+}
+
+size_t aprs_freq_parse(const char *s, size_t n, aprs_freq_t *f)
+{
+	memset(f, 0, sizeof(*f));
+	f->offset_10k = APRS_FREQ_OFFSET_STD;
+	size_t i = 0;
+	while (i < n && s[i] == ' ') {
+		i++;
+	}
+	if (i + 9u <= n && s[i] == '/' && s[i + 1u] == 'A' && s[i + 2u] == '=') {
+		i += 9u;	// an altitude some radios put first
+		while (i < n && s[i] == ' ') {
+			i++;
+		}
+	}
+	if (i + 10u > n || s[i + 3u] != '.') {
+		return 0;
+	}
+	const char *p = s + i;
+	uint32_t mhz, khz;
+	if (!freq_digits(p, 3, &mhz, '9') || mhz < 100u) {
+		return 0;
+	}
+	if (freq_digits(p + 4, 3, &khz, '9') && freq_lower(p[7]) == 'm' && freq_lower(p[8]) == 'h' &&
+	    freq_lower(p[9]) == 'z') {
+		// "146.685MHz"
+	} else if (freq_digits(p + 4, 2, &khz, '9') && p[6] == ' ' && freq_lower(p[7]) == 'm' &&
+		   freq_lower(p[8]) == 'h' && freq_lower(p[9]) == 'z') {
+		khz *= 10u;	// "146.52 MHz"
+	} else {
+		return 0;
+	}
+	f->hz = mhz * 1000000u + khz * 1000u;
+	i += 10u;
+	// The fields, each after a space; the first word that isn't one starts the comment proper
+	while (i < n && s[i] == ' ') {
+		size_t k = 0, j = i + 1u;
+		while (j + k < n && s[j + k] != ' ') {
+			k++;
+		}
+		aprs_freq_t t = *f;
+		if (k == 0 || !freq_field(s + j, k, &t)) {
+			break;
+		}
+		*f = t;
+		i = j + k;
+	}
+	while (i < n && s[i] == ' ') {
+		i++;
+	}
+	return i;
+}
+
+size_t aprs_freq_build(const aprs_freq_t *f, char *out, size_t max)
+{
+	if (f->hz < 100000000u || f->hz >= 1000000000u) {
+		return 0;
+	}
+	char t[24];
+	size_t k = 0;
+	uint32_t khz = (f->hz + 500u) / 1000u;
+	t[k++] = (char)('0' + khz / 100000u);
+	t[k++] = (char)('0' + khz / 10000u % 10u);
+	t[k++] = (char)('0' + khz / 1000u % 10u);
+	t[k++] = '.';
+	t[k++] = (char)('0' + khz / 100u % 10u);
+	t[k++] = (char)('0' + khz / 10u % 10u);
+	t[k++] = (char)('0' + khz % 10u);
+	memcpy(t + k, "MHz", 3);
+	k += 3;
+	if (f->toff) {
+		memcpy(t + k, " Toff", 5);
+		k += 5;
+	} else if (f->tone_kind != APRS_FREQ_TONE_NONE) {
+		bool dcs = f->tone_kind == APRS_FREQ_TONE_DCS;
+		uint16_t v = dcs ? f->tone : (uint16_t)(f->tone / 10u);
+		uint16_t base = dcs ? 8u : 10u;
+		char c = f->tone_kind == APRS_FREQ_TONE_ENC ? 'T' : f->tone_kind == APRS_FREQ_TONE_SQL ? 'C' : 'D';
+		if (v >= base * base * base) {
+			return 0;
+		}
+		t[k++] = ' ';
+		t[k++] = f->narrow ? freq_lower(c) : c;
+		t[k++] = (char)('0' + v / (base * base));
+		t[k++] = (char)('0' + v / base % base);
+		t[k++] = (char)('0' + v % base);
+	}
+	if (f->offset_10k != APRS_FREQ_OFFSET_STD && f->offset_10k >= -999 && f->offset_10k <= 999) {
+		uint16_t v = (uint16_t)(f->offset_10k < 0 ? -f->offset_10k : f->offset_10k);
+		t[k++] = ' ';
+		t[k++] = f->offset_10k > 0 ? '+' : '-';	// 0 is "-000": simplex
+		t[k++] = (char)('0' + v / 100u);
+		t[k++] = (char)('0' + v / 10u % 10u);
+		t[k++] = (char)('0' + v % 10u);
+	}
+	if (k > max) {
+		return 0;
+	}
+	memcpy(out, t, k);
+	return k;
+}
+
+int32_t aprs_freq_std_offset_hz(uint32_t hz)
+{
+	static const struct { uint32_t lo, hi; int32_t off; } plan[] = {
+		{ 145100000u, 145499999u, -600000 },	// 2 m
+		{ 146000000u, 146399999u, 600000 },
+		{ 146600000u, 146999999u, -600000 },
+		{ 147000000u, 147399999u, 600000 },
+		{ 147600000u, 147999999u, -600000 },
+		{ 223850000u, 224980000u, -1600000 },	// 1.25 m
+		{ 442000000u, 444999999u, 5000000 },	// 70 cm
+		{ 447000000u, 449999999u, -5000000 },
+	};
+	for (size_t i = 0; i < sizeof(plan) / sizeof(plan[0]); i++) {
+		if (hz >= plan[i].lo && hz <= plan[i].hi) {
+			return plan[i].off;
+		}
+	}
+	return 0;
+}

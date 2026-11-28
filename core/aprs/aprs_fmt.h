@@ -86,4 +86,33 @@ uint16_t aprs_bearing_deg(int32_t lat1, int32_t lon1, int32_t lat2, int32_t lon2
 void aprs_base91(uint32_t v, uint8_t digits, char *out);
 uint32_t aprs_base91_value(const char *s, uint8_t digits);
 
+// --- A voice frequency in a comment (aprs.org freqspec.txt, WB4APR, rev. 2019-09-30) ---
+// The first 10 bytes of a position comment, "146.685MHz" (1 kHz) or "146.52 MHz" (10 kHz), then space-separated
+// fields: a tone ("T100" encode, "C100" encode and decode, "D023" DCS; a lower-case letter = narrow), "Toff" (no tone,
+// simplex), an offset in 10 kHz units ("-060", "+500", "-000" simplex), a range ("R25m", "R40k"). A radio that hears
+// it can tune there (QSY); a radio that sends it offers its voice channel
+
+#define APRS_FREQ_TONE_NONE	0
+#define APRS_FREQ_TONE_ENC	1	// 'T': CTCSS on transmit
+#define APRS_FREQ_TONE_SQL	2	// 'C': CTCSS on transmit and receive
+#define APRS_FREQ_TONE_DCS	3	// 'D'
+#define APRS_FREQ_OFFSET_STD	INT16_MIN	// no offset given: the band's standard one (aprs_freq_std_offset_hz)
+
+typedef struct {
+	uint32_t hz;		// 0 = none
+	int16_t offset_10k;	// transmit - receive in 10 kHz, -999..999; APRS_FREQ_OFFSET_STD = not given
+	uint16_t tone;		// CTCSS: Hz x 10 (1000 = 100.0); DCS: the code's value (its digits are octal: 023 = 19)
+	uint8_t tone_kind;	// APRS_FREQ_TONE_*
+	bool narrow;		// a lower-case tone letter: 12.5 kHz
+	bool toff;		// "Toff": no tone, simplex
+} aprs_freq_t;
+
+// A frequency at the start of a comment (after spaces and a leading "/A=" altitude). Returns how many bytes of s it
+// took, fields and the space after them included (the rest is the comment proper); 0 and f->hz 0: none
+size_t aprs_freq_parse(const char *s, size_t n, aprs_freq_t *f);
+// The text for f, "146.685MHz T100 -060" (no trailing space). 0 if f has no frequency or it doesn't fit
+size_t aprs_freq_build(const aprs_freq_t *f, char *out, size_t max);
+// The standard repeater offset of the North American band plan at hz (2 m, 1.25 m, 70 cm), 0 = a simplex part of the band
+int32_t aprs_freq_std_offset_hz(uint32_t hz);
+
 #endif

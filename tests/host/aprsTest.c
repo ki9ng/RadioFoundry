@@ -1451,6 +1451,113 @@ static void test_parse_fuzz(void)
 	printf("# aprs fuzz: %ld frames, %ld decoded, %ld parsed\n", iters, decoded, parsed);
 }
 
+// A voice frequency in a comment (aprs.org freqspec): parsed, built, and back
+static void test_freqspec(void)
+{
+	aprs_freq_t f;
+	const char *c = "146.685MHz T100 -060 W9LY repeater";
+	size_t k = aprs_freq_parse(c, strlen(c), &f);
+	CHECK(f.hz == 146685000u && f.tone_kind == APRS_FREQ_TONE_ENC && f.tone == 1000 && f.offset_10k == -60 &&
+	      !f.narrow && !f.toff, "T100 -060: hz %u kind %u tone %u off %d", (unsigned)f.hz, f.tone_kind, f.tone,
+	      f.offset_10k);
+	CHECK(k == 21 && strcmp(c + k, "W9LY repeater") == 0, "comment after the fields: %zu \"%s\"", k, c + k);
+
+	c = "146.52 MHz Enroute Alabama";
+	k = aprs_freq_parse(c, strlen(c), &f);
+	CHECK(f.hz == 146520000u && f.tone_kind == APRS_FREQ_TONE_NONE && f.offset_10k == APRS_FREQ_OFFSET_STD,
+	      "10 kHz form: %u", (unsigned)f.hz);
+	CHECK(strcmp(c + k, "Enroute Alabama") == 0, "10 kHz form comment \"%s\"", c + k);
+
+	c = "442.440MHz T107 -500 Repeater";
+	aprs_freq_parse(c, strlen(c), &f);
+	CHECK(f.tone == 1072 && f.offset_10k == -500, "T107 = 107.2 Hz: %u, -500: %d", f.tone, f.offset_10k);
+
+	c = "146.835MHz C107 R25m AARC";
+	k = aprs_freq_parse(c, strlen(c), &f);
+	CHECK(f.tone_kind == APRS_FREQ_TONE_SQL && f.tone == 1072 && strcmp(c + k, "AARC") == 0, "C107 R25m: \"%s\"",
+	      c + k);
+
+	c = "146.805MHz D256 R25k Repeater";
+	aprs_freq_parse(c, strlen(c), &f);
+	CHECK(f.tone_kind == APRS_FREQ_TONE_DCS && f.tone == 0256, "D256: %o", f.tone);
+
+	c = "145.50 MHz t077 Simplex";
+	aprs_freq_parse(c, strlen(c), &f);
+	CHECK(f.narrow && f.tone == 770 && f.tone_kind == APRS_FREQ_TONE_ENC, "t077 narrow");
+
+	c = "147.000MHz Toff -000";
+	aprs_freq_parse(c, strlen(c), &f);
+	CHECK(f.toff && f.offset_10k == 0, "Toff -000");
+
+	c = "146.940mhz t100";
+	k = aprs_freq_parse(c, strlen(c), &f);
+	CHECK(f.hz == 146940000u && f.narrow && k == strlen(c), "lower-case MHz, nothing after");
+
+	c = "/A=001234 147.240MHz +060 Hi";
+	aprs_freq_parse(c, strlen(c), &f);
+	CHECK(f.hz == 147240000u && f.offset_10k == 60, "after an altitude");
+
+	c = "Hello 146.520MHz";
+	CHECK(aprs_freq_parse(c, strlen(c), &f) == 0 && f.hz == 0, "not at the start: none");
+	c = "146.5MHz";
+	CHECK(aprs_freq_parse(c, strlen(c), &f) == 0, "short");
+	c = "099.500MHz";
+	CHECK(aprs_freq_parse(c, strlen(c), &f) == 0, "under 100 MHz");
+	c = "146.520MHz T1000";
+	k = aprs_freq_parse(c, strlen(c), &f);
+	CHECK(f.hz == 146520000u && f.tone_kind == APRS_FREQ_TONE_NONE && strcmp(c + k, "T1000") == 0,
+	      "a word that isn't a field is the comment");
+
+	// Built: our own voice channel
+	char out[32];
+	aprs_freq_t b;
+	memset(&b, 0, sizeof(b));
+	b.hz = 146685000u;
+	b.tone_kind = APRS_FREQ_TONE_ENC;
+	b.tone = 1000;
+	b.offset_10k = -60;
+	k = aprs_freq_build(&b, out, sizeof(out));
+	out[k] = '\0';
+	CHECK(strcmp(out, "146.685MHz T100 -060") == 0, "build \"%s\"", out);
+	b.tone_kind = APRS_FREQ_TONE_DCS;
+	b.tone = 023;
+	b.narrow = true;
+	b.offset_10k = 0;
+	k = aprs_freq_build(&b, out, sizeof(out));
+	out[k] = '\0';
+	CHECK(strcmp(out, "146.685MHz d023 -000") == 0, "build DCS narrow simplex \"%s\"", out);
+	b.tone_kind = APRS_FREQ_TONE_NONE;
+	b.offset_10k = APRS_FREQ_OFFSET_STD;
+	b.hz = 446012500u;
+	k = aprs_freq_build(&b, out, sizeof(out));
+	out[k] = '\0';
+	CHECK(strcmp(out, "446.013MHz") == 0, "rounded to 1 kHz, nothing after \"%s\"", out);
+	CHECK(aprs_freq_build(&b, out, 9) == 0, "doesn't fit");
+	b.hz = 52525000u;
+	CHECK(aprs_freq_build(&b, out, sizeof(out)) == 0, "under 100 MHz");
+	// Round trip of every standard tone
+	for (uint16_t i = 0; i < 50; i++) {
+		static const uint16_t tones[50] = { 670, 693, 719, 744, 770, 797, 825, 854, 885, 915, 948, 974, 1000,
+			1035, 1072, 1109, 1148, 1188, 1230, 1273, 1318, 1365, 1413, 1462, 1514, 1567, 1598, 1622, 1655, 1679,
+			1713, 1738, 1773, 1799, 1835, 1862, 1899, 1928, 1966, 1995, 2035, 2065, 2107, 2181, 2257, 2291,
+			2336, 2418, 2503, 2541 };
+		memset(&b, 0, sizeof(b));
+		b.hz = 147105000u;
+		b.tone_kind = APRS_FREQ_TONE_SQL;
+		b.tone = tones[i];
+		b.offset_10k = 60;
+		k = aprs_freq_build(&b, out, sizeof(out));
+		aprs_freq_parse(out, k, &f);
+		CHECK(f.hz == b.hz && f.tone == b.tone && f.tone_kind == b.tone_kind && f.offset_10k == 60,
+		      "round trip %u", tones[i]);
+	}
+	// The band plan's offsets
+	CHECK(aprs_freq_std_offset_hz(146685000u) == -600000 && aprs_freq_std_offset_hz(147240000u) == 600000 &&
+	      aprs_freq_std_offset_hz(146520000u) == 0 && aprs_freq_std_offset_hz(444100000u) == 5000000 &&
+	      aprs_freq_std_offset_hz(224500000u) == -1600000 && aprs_freq_std_offset_hz(446000000u) == 0,
+	      "standard offsets");
+}
+
 int main(int argc, char **argv)
 {
 	if (argc == 2 && strcmp(argv[1], "--sweep") == 0) {
@@ -1480,6 +1587,7 @@ int main(int argc, char **argv)
 	test_position_build();
 	test_position_parse();
 	test_mice();
+	test_freqspec();
 	test_messages();
 	test_compressed_cs();
 	test_parse_edges();
