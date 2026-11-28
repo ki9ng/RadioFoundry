@@ -381,7 +381,9 @@ uint32_t d578uv_bt_scan(void)
 	uint32_t now = hal_millis();
 	NVIC_DisableIRQ(MCU_UART4_IRQn);
 	bool present = bt.present && !bt.aprs_board;
+#if CONFIG_BT_KISS
 	bool answered = bt.present;
+#endif
 	bool ptt = bt_at_ptt(&bt);
 	uint32_t events = bt.key_events;
 	uint8_t key = bt.key;
