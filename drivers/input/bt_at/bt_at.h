@@ -224,6 +224,25 @@ static inline void bt_at_aprs_byte(bt_at_t *b, uint8_t c)
 		}
 	} else if (b->aprs_len == b->aprs_ctl + 2u) {
 		b->aprs_ui = b->aprs_buf[b->aprs_ctl] == 0x03u && c == 0xF0u;
+		if (!b->aprs_ui) {
+			// Not an APRS frame: the board decoding noise. Waiting for the buffer's end held the parser for minutes
+			// once the board stopped part way, and every module reply with it (ki9ng fork, 2026-11-27): dropped now,
+			// what follows goes to the line parser
+			b->aprs = false;
+			b->aprs_overflows++;
+			b->errors++;
+		}
+	}
+}
+
+// An APRS board frame that stopped arriving part way (the board's decoder lost the signal): given up, so the next
+// bytes are lines again. The caller decides when (no byte for a while); with the UART interrupt held off
+static inline void bt_at_aprs_drop(bt_at_t *b)
+{
+	if (b->aprs) {
+		b->aprs = false;
+		b->aprs_overflows++;
+		b->errors++;
 	}
 }
 

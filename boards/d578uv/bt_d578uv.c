@@ -52,6 +52,10 @@ static uint32_t ver_ms;
 #define BT_KEY_MS		150u	// a key event holds its key bit this long, past the core's debounce
 
 static bt_at_t bt;
+#if D578UV_BT_APRS
+#define BT_APRS_IDLE_MS	100u
+static uint32_t aprs_idle_n, aprs_idle_ms;	// rx_bytes while an APRS board frame is under way, and since when
+#endif
 static uint32_t start_ms, key_ms, key_seen, offs;
 static uint8_t probes, key_bit_held = 0xFF;
 
@@ -387,6 +391,17 @@ uint32_t d578uv_bt_scan(void)
 	bool ptt = bt_at_ptt(&bt);
 	uint32_t events = bt.key_events;
 	uint8_t key = bt.key;
+#if D578UV_BT_APRS
+	// An APRS board frame comes in one burst (a few ms at 115200): one with no byte for BT_APRS_IDLE_MS was cut off
+	// (the board's decoder lost the signal, as when a retune briefly fed it noise) and would hold the parser, and the
+	// module's replies with it, until it reached the buffer's end
+	if (!bt.aprs || rx_bytes != aprs_idle_n) {
+		aprs_idle_n = rx_bytes;
+		aprs_idle_ms = now;
+	} else if (now - aprs_idle_ms >= BT_APRS_IDLE_MS) {
+		bt_at_aprs_drop(&bt);	// counted in input.bt_aprs_long
+	}
+#endif
 	NVIC_EnableIRQ(MCU_UART4_IRQn);
 	if (!cycled) {
 		if (power_want) {

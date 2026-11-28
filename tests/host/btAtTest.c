@@ -277,19 +277,34 @@ static void test_aprs_board(void)
 	b.aprs_max = sizeof(abuf);
 	feed(&b, "~\r\nOK\r\n");
 	CHECK(b.oks == 4);
-	// not a UI frame (control 0x13): its '~' doesn't close it; it runs into the buffer's end and is dropped
+	// not a UI frame (control 0x13, the board decoding noise): dropped as soon as the header shows it, and the module's
+	// replies after it parse (it used to hold the parser to the buffer's end, OKs and all: 2026-11-27)
 	uint8_t f3[sizeof(fr)];
 	memcpy(f3, fr, sizeof(fr));
 	f3[14] = 0x13;
 	adone = 0;
 	feed(&b, "+APRS:~");
-	feed_bin(&b, f3, sizeof(f3));
-	feed(&b, "~");
-	CHECK(adone == 0 && b.aprs);
-	for (unsigned i = 0; i < sizeof(abuf); i++) {
-		bt_at_byte(&b, 0x55);
-	}
-	CHECK(!b.aprs && b.aprs_overflows == 2);
+	feed_bin(&b, f3, 16);
+	CHECK(adone == 0 && !b.aprs && b.aprs_overflows == 2);
+	feed(&b, "\r\nOK\r\n");
+	CHECK(b.oks == 5);
+	// the bench case: noise whose 7th byte ends the address field, then nothing more from the board
+	static const uint8_t junk[] = { 0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0x01, 0x55, 0xaa };
+	feed(&b, "+APRS:~");
+	feed_bin(&b, junk, sizeof(junk));
+	CHECK(!b.aprs && b.aprs_overflows == 3);
+	feed(&b, "OK\r\n");
+	CHECK(b.oks == 6);
+	// cut off before its header: held until the caller gives it up (no byte for a while), then lines again
+	feed(&b, "+APRS:~");
+	feed_bin(&b, fr, 5);
+	CHECK(b.aprs && b.oks == 6);
+	bt_at_aprs_drop(&b);
+	CHECK(!b.aprs && b.aprs_overflows == 4);
+	bt_at_aprs_drop(&b);
+	CHECK(b.aprs_overflows == 4);
+	feed(&b, "OK\r\n");
+	CHECK(b.oks == 7);
 	// a UART error mid-frame ends it; the next line parses
 	feed(&b, "\r\n+APRS:~");
 	feed_bin(&b, fr, 10);
