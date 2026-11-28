@@ -8,6 +8,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include "aprs/aprs.h"
+#include "radio/radio.h"
 
 // False when APRS isn't in this build
 bool ui_svc_aprs_view(aprs_view_t *v);
@@ -24,5 +25,14 @@ bool ui_svc_aprs_station_find(const char *call, aprs_station_t *out);
 // How far and which way a heard station is from our position (position_now, as the beacons and DMR GPS Info use
 // it): false when the station or we have no position
 bool ui_svc_aprs_range(const aprs_station_t *s, uint32_t *m, uint16_t *deg);
+
+// QSY (aprs.org freqspec): the radio to the voice frequency a heard station offers, in the VFO, with its split (the
+// band plan's when it gives none), tone and width. The first QSY keeps where the radio was, for ui_svc_aprs_qsy_undo
+enum { UI_QSY_OK, UI_QSY_NONE, UI_QSY_BAND, UI_QSY_DUAL };
+uint8_t ui_svc_aprs_qsy(const radio_view_t *v, const aprs_freq_t *f);
+// Back where the radio was before the QSY; the receive frequency it goes back to in *hz (0: the channel). False: none
+bool ui_svc_aprs_qsy_undo(uint32_t *hz);
+// Every UI pass: the way back is dropped once the user leaves the QSY frequency himself
+void ui_svc_aprs_qsy_track(const radio_view_t *v);
 
 #endif

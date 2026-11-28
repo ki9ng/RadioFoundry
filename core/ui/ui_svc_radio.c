@@ -544,3 +544,81 @@ void ui_svc_apply(uint8_t id, int32_t value)
 	}
 	rs_send(&was);
 }
+
+#if CONFIG_APRS_QSY
+// Where the radio was before the first ui_svc_vfo_tune, until the user tunes away (ui_svc_vfo_tune_track)
+static struct {
+	bool valid;
+	bool settled;		// the radio reached the tuned frequency
+	bool was_vfo;
+	uint8_t mode, bw;
+	uint32_t target, rx, tx;
+	subtone_t rx_tone, tx_tone;
+} vfo_back;
+
+bool ui_svc_vfo_tune(const radio_view_t *v, const ui_vfo_tune_t *t)
+{
+	if (!board_in_band(t->rx_hz, false) || !board_in_band(t->tx_hz, true)) {
+		return false;
+	}
+	if (v->scan != 0) {
+		radio_req_scan(RSCAN_STOP);
+	}
+	if (!vfo_back.valid) {	// a tune after a tune goes back to where the first one started
+		vfo_back.was_vfo = v->vfo;
+		vfo_back.mode = v->ch.mode;
+		vfo_back.bw = v->ch.bw;
+		vfo_back.rx = v->ch.rx_hz;
+		vfo_back.tx = v->ch.tx_hz;
+		vfo_back.rx_tone = v->ch.rx_tone;
+		vfo_back.tx_tone = v->ch.tx_tone;
+	}
+	vfo_back.valid = true;
+	vfo_back.settled = false;
+	vfo_back.target = t->rx_hz;
+	// In order: the radio takes them one by one, so the VFO is open before its split, FM before its tones
+	radio_req_vfo_set(t->rx_hz);
+	radio_req_mode(RADIO_MODE_FM);	// the VFO keeps a mode of its own, which may be digital
+	radio_req_vfo_tx(t->tx_hz == t->rx_hz ? 0u : t->tx_hz);
+	radio_req_bandwidth(t->narrow ? RADIO_BW_12K5 : RADIO_BW_25K);
+	radio_req_tone(RADIO_TONE_TX, t->tx_tone);
+	radio_req_tone(RADIO_TONE_RX, t->rx_tone);
+	return true;
+}
+
+bool ui_svc_vfo_back(uint32_t *hz)
+{
+	if (!vfo_back.valid) {
+		return false;
+	}
+	vfo_back.valid = false;
+	if (!vfo_back.was_vfo) {
+		radio_req_vfo(false);	// the channel it was on: the VFO doesn't move it
+		*hz = 0;
+		return true;
+	}
+	radio_req_vfo_set(vfo_back.rx);
+	radio_req_vfo_tx(vfo_back.tx == vfo_back.rx ? 0u : vfo_back.tx);
+	if (vfo_back.mode == RADIO_MODE_FM) {
+		radio_req_bandwidth((radio_bw_t)vfo_back.bw);
+		radio_req_tone(RADIO_TONE_RX, vfo_back.rx_tone);
+		radio_req_tone(RADIO_TONE_TX, vfo_back.tx_tone);
+	} else {
+		radio_req_mode(vfo_back.mode);
+	}
+	*hz = vfo_back.rx;
+	return true;
+}
+
+void ui_svc_vfo_tune_track(const radio_view_t *v)
+{
+	if (!vfo_back.valid || v->aprs_tx) {
+		return;		// an APRS transmission leaves the channel for a moment
+	}
+	if (v->vfo && v->ch.rx_hz == vfo_back.target) {
+		vfo_back.settled = true;
+	} else if (vfo_back.settled) {
+		vfo_back.valid = false;	// the user tuned away: there is nothing to go back to now
+	}
+}
+#endif

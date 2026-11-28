@@ -928,7 +928,8 @@ static void test_settings_layout(void)
 		{ offsetof(settings_t, reserved10), 399 },
 		{ offsetof(settings_t, sig_dmr), 400 },
 		{ offsetof(settings_t, sig_fm), 403 },
-		{ offsetof(settings_t, reserved11), 406 },
+		{ offsetof(settings_t, aprs_ui), 406 },
+		{ offsetof(settings_t, aprs_popup_s), 407 },
 	};
 	CHECK(sizeof(settings_t) == 408);
 	for (unsigned i = 0; i < sizeof(offs) / sizeof(offs[0]); i++) {

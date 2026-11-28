@@ -40,11 +40,21 @@ void aprs_cfg_default(aprs_cfg_t *c)
 	c->via = APRS_VIA_RF;
 	c->dmr_dst = APRS_DMR_DST_DEFAULT;
 	c->rx_on = c->messaging;
+	c->freq_beacon = true;
+	c->popup = APRS_POPUP_ALL;
+	c->popup_s = APRS_POPUP_S_DEFAULT;
 }
 
 static void cfg_from_settings(const settings_t *s, aprs_cfg_t *c)
 {
 	aprs_cfg_default(c);
+	// The screen settings have their own bytes, 0 = the defaults: an older record and a fresh one read the same
+	c->freq_beacon = (s->aprs_ui & SETTINGS_APRSUI_FREQ_OFF) == 0;
+	uint8_t popup = (uint8_t)((s->aprs_ui & SETTINGS_APRSUI_POPUP_MASK) >> SETTINGS_APRSUI_POPUP_SHIFT);
+	c->popup = popup < APRS_POPUP_COUNT ? popup : APRS_POPUP_ALL;
+	c->miles = (s->aprs_ui & SETTINGS_APRSUI_MILES) != 0;
+	c->popup_s = s->aprs_popup_s >= APRS_POPUP_S_MIN && s->aprs_popup_s <= APRS_POPUP_S_MAX ? s->aprs_popup_s :
+		APRS_POPUP_S_DEFAULT;
 	if (s->aprs_stored != 1) {
 		return;
 	}
@@ -113,6 +123,10 @@ static void cfg_to_settings(const aprs_cfg_t *c, settings_t *s)
 	s->aprs_power = c->power;
 	s->aprs_txdelay = c->txdelay;
 	s->aprs_misc = (uint8_t)((s->aprs_misc & 0xF0u) | (c->via & 3u) | ((c->digi & 3u) << 2));
+	s->aprs_ui = (uint8_t)((c->freq_beacon ? 0 : SETTINGS_APRSUI_FREQ_OFF) |
+			       ((c->popup < APRS_POPUP_COUNT ? c->popup : 0) << SETTINGS_APRSUI_POPUP_SHIFT) |
+			       (c->miles ? SETTINGS_APRSUI_MILES : 0));
+	s->aprs_popup_s = c->popup_s;
 	s->aprs_stored = 1;
 }
 
@@ -240,6 +254,7 @@ void aprs_tick(const aprs_radio_t *r, uint32_t now_ms)
 	LOCK();
 	aprs_s.now = now_ms;
 	aprs_ax25_tick(now_ms);
+	aprs_ax25_voice(r);
 	// The position in use (position.h), exact: the beacon formats apply the ambiguity
 	position_fix_t fx;
 	uint8_t src = position_fix(&fx, now_ms);
@@ -349,6 +364,9 @@ void aprs_set_cfg(const aprs_cfg_t *c, uint32_t now_ms)
 	}
 	if (v.level > 100) {
 		v.level = APRS_LEVEL_DEFAULT;
+	}
+	if (v.popup_s < APRS_POPUP_S_MIN || v.popup_s > APRS_POPUP_S_MAX) {
+		v.popup_s = APRS_POPUP_S_DEFAULT;
 	}
 	settings_t *s = settings_begin();
 	cfg_to_settings(&v, s);

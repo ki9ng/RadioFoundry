@@ -87,6 +87,11 @@ void gfx_hline(int x, int y, int w, color_t c);
 void gfx_vline(int x, int y, int h, color_t c);
 void gfx_rect(int x, int y, int w, int h, color_t c);	// outline
 void gfx_round_fill(int x, int y, int w, int h, color_t c);	// corners cut by one pixel
+void gfx_line(int x0, int y0, int x1, int y1, color_t c);
+void gfx_circle(int cx, int cy, int r, color_t c);	// outline
+void gfx_disc(int cx, int cy, int r, color_t c);	// filled
+// sin(deg) x 256 from a table (no libm), for plots: north up, x = r * sin(az), y = -r * sin(az + 90)
+int gfx_isin(int deg);
 
 // Text with its top-left corner at x, y. Returns the x after the last glyph
 int gfx_text(const font_t *f, int x, int y, const char *s, color_t fg);

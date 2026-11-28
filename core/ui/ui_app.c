@@ -716,6 +716,9 @@ __attribute__((noinline)) static void handle_event(const ui_event_t *ev)
 			ui_svc_beep(UI_BEEP_MESSAGE);
 		vibrate(UI_VIBE_MESSAGE);
 		break;
+	case UI_EV_APRS_HEARD:
+		ui_aprs_heard(ev->name, ev->ok);
+		break;
 #endif
 	case UI_EV_SAVE_FAILED: {
 		ui_toast(ev->why != TR_NONE ? tr(ev->why) : TR(TOAST_SAVE_FAILED, "Couldn't save: try again"));
@@ -1210,6 +1213,8 @@ bool ui_home_key(const input_event_t *ev)
 				ui_st.entry_digits[ui_st.entry_len] = 0;
 		} else if (ui_st.banner.kind != UI_BANNER_NONE) {
 			ui_st.banner.kind = UI_BANNER_NONE;
+		} else if (ui_aprs_qsy_back()) {
+			// an APRS QSY undone: back where the radio was before it
 		} else if (ui_st.scanning) {
 			ui_svc_scan(false);
 			ui_st.scanning = false;
@@ -2644,6 +2649,7 @@ bool ui_app_tick(const radio_view_t *v, uint32_t now_ms)
 #endif
 	if (ui_st.entry && (now - entry_last >= ENTRY_TIMEOUT_MS || !view->vfo))
 		entry_cancel();
+	ui_aprs_tick(now);
 	uint16_t unread = ui_svc_msg_unread();
 	unread += aprs_unread();
 	if (unread != ui_st.unread) {

@@ -115,6 +115,15 @@ with the DMR backend alone.
 - Position: `!` (or `=` when messaging is on), plain `DDMM.mmN/DDDMM.mmW` with the symbol, or compressed (base 91,
   the default), course / speed when known, altitude `/A=` when known, then the comment (the codeplug APRS record's
   comment if any). Position ambiguity 0-4 blanks digits as APRS101 chapter 8 says.
+- Voice frequency (`CONFIG_APRS_QSY`; Freq in beacon, on by default): the comment starts with our voice channel in the aprs.org
+  freqspec form (WB4APR, freqspec.txt rev. 2019-09-30), `146.685MHz T100 -060`, then a space and the codeplug
+  comment, all cut at `APRS_COMMENT_MAX`. The channel is side A's: the current channel, or dual watch's channel A,
+  as it was when the receiver was last on it (`aprs_voice_note` in `radio_sm.c`; kept while the radio is away on the
+  APRS frequency, scanning, on channel B or a hotspot). Left out when it isn't FM, is the APRS frequency itself or
+  isn't amateur (`aprs_amateur_hz`). Tone: CTCSS on transmit only `T`, the same on both `C`, DCS `D` (inverted DCS
+  has no field), lower case when narrow. Offset: a split of at most 9.99 MHz in 10 kHz units; a simplex channel where
+  the band plan has repeaters (`aprs_freq_std_offset_hz`) `-000`; otherwise none. Built at send time
+  (`aprs_ax25_voice`, `aprs_freq_build`).
 - Status: `>text` (40 characters).
 - Messages: `:ADDRESSEE:text{NN` (67 characters), acks `:ADDRESSEE:ackNN`; ours retried at 30, 60 and 120 s
   (3 tries) until the ack. The composer can omit the message number (one transmission, no retry or acknowledgment)
@@ -160,6 +169,14 @@ model per character. `0` is no radio: the host tests build without a board. The 
 Positions (plain, compressed, with and without timestamps), Mic-E (the destination field's latitude and message bits,
 longitude, speed and course from the information field), objects, items, status, messages, third-party packets,
 queries, weather and telemetry recognized by type (not decoded further).
+
+A voice frequency at the start of a station's own position or status comment (freqspec: `FFF.FFFMHz` or
+`FFF.FF MHz`, after spaces or a leading `/A=` altitude) is kept with the station (`aprs_station_t.freq`,
+`aprs_freq_parse`) with its tone (`T` / `C` / `D`, lower case narrow, `Toff`), offset (`+xxx` / `-xxx` in 10 kHz,
+none = the band plan's) and range field (read, not kept); the stored comment starts after them. Three-digit tones
+map to the standard tone with those whole hertz (`T107` = 107.2 Hz). A position comment without one clears it, a
+status without one leaves it. Objects and items carry a repeater's frequency, not the sender's: not taken. The
+station's altitude (`/A=`, Mic-E) is kept too.
 
 Third-party packets (`}SRC>DST,PATH:info`, how an iGate puts APRS-IS traffic on RF): a message or ack inside one is
 handled as from SRC (`aprs_ax25.c`, `third_party_in`). It is kept, matched to our pending message and acked under SRC; the
@@ -411,16 +428,39 @@ The page shows the rows the build has:
 The digit keys follow the rows shown. Where the position comes from, the fixed position and "Send in DMR calls" are
 in Settings > Location ([position.md](position.md) 6).
 
-Selecting a heard station opens `aprs-station`, a scrollable detail list. The UI keeps its callsign,
-not its row index, and resolves the current station through `ui_svc_aprs_station_find` on each draw. New packets
-can reorder the heard list without changing the open station or Message recipient. Message is the first row and
-opens the composer with that callsign. The remaining rows show distance and compass direction when both positions
-exist, heard age, Direct or Via digipeater, position age when different from heard age, speed in km/h and course
-when the retained position has them, symbol table and code, the retained comment/status text, and packet count.
-Unknown speed and course have no row. Text is limited to the engine's 24-byte field; no digipeater identity or
-additional comment text is retained. Detail rows scroll with Up / Down and do not perform actions. If the station
-is evicted, the screen says "No longer in list" and Message still addresses the saved callsign. This detail code
-and the saved callsign are guarded by `CONFIG_APRS_RX`; the engine storage is unchanged.
+More rows (between Send via and KISS on USB): Freq in beacon (On / Off, section 4.1; dimmed without
+`board.afsk`), Pop-up (All, Off, Heard direct), Pop-up time (1-60 s, default 10: an inline number row, OK opens it,
+the knob and Up / Down step 1 and stop at the ends, digits type it and it is kept at two digits or on OK, Back leaves
+it; the hint says so), Units (km: km, km/h, m; mi: mi, mph, ft, `sb_dist`; the heard list and the station screen
+follow it). The first three after Send via take the digits 9 and 0 where there is room.
+
+Selecting a heard station opens `aprs-station` (`CONFIG_APRS_RX`), drawn by itself: a compass on the left, north up,
+us in the middle and the station on the rim at its bearing (a `?` without both positions; no compass under 24 px);
+beside it, most useful first since a small display has room for a few lines, the distance and compass point, the
+voice frequency it offers ("146.685- T100": the offset's sign, the band plan's when it gives none), Direct or Digi
+and the heard age, then speed, course and altitude when known, in the Units setting; the comment along the bottom.
+The UI keeps its callsign, not its row index, and resolves it through `ui_svc_aprs_station_find` on each draw, so new
+packets can reorder the heard list without changing the open station. The knob and Up / Down step to the next and
+previous station (wrapping), OK opens the composer with its callsign, CONTEXT tunes to its frequency (QSY); the hint
+names CONTEXT only when it has one. If the station is evicted, the screen says "No longer in list" and OK still
+addresses the saved callsign.
+
+The frequency, altitude, pop-up and QSY, and the rows Freq in beacon, Pop-up and Pop-up time, are `CONFIG_APRS_QSY`'s
+(off unless a variant turns it on: about 400 B of RAM); the compass and Units come with `CONFIG_APRS_RX`.
+
+**QSY.** CONTEXT on a station with a frequency: `ui_svc_aprs_qsy` makes it a whole channel (`ui_vfo_tune_t`: the
+split it gives, else the band plan's; `T` a transmit tone only, `C` and `D` on both; narrow from the tone's case) and
+`ui_svc_vfo_tune` tunes the VFO to it in one go: a scan stops, the VFO opens, FM, the split, the width, the tones.
+Refused with a toast outside the radio's bands, or while dual watch runs (its two channels are the user's picks).
+The first tune keeps where the radio was (channel, or the VFO's frequency, split, tones, width and mode); Back on
+Home goes back there ("Back to 146.520", "Back to the channel"), ahead of undoing temporary changes. The way back is
+dropped once the radio has been on the tuned frequency and the user tunes away himself.
+
+**Pop-up.** A station heard with its own position bumps `aprs_view_t.pos_serial` (with its call and whether it came
+direct); `ui_svc_aprs_msg_poll` fires `UI_EV_APRS_HEARD` and `ui_aprs_heard` opens that station's screen on Home as
+the Pop-up setting says: never over a menu, a frequency being typed, a transmission or the message banner. It closes
+after the Pop-up time (`ui_aprs_tick`) unless a key is pressed on it, which makes it the user's screen. A new station
+while it is up replaces it and starts the time again; the same station only refreshes it.
 
 **Inbound message notification (`CONFIG_APRS_RX`).** When `ui_svc_aprs_msg_poll` (called every UI pass from
 `ui_svc_poll`) sees `aprs_view_t.msg_serial` advance, it fires `UI_EV_APRS_MESSAGE` with the sender's callsign and
@@ -444,7 +484,8 @@ debug link (`rfoundry_debug.py aprs set`) and later by qdmr through the native c
 
 `settings_t` (`core/settings/settings.h`), taken only when `aprs_stored` is 1, else the defaults: `aprs_flags`
 (TX, SmartBeaconing, compressed, after PTT, boot, KISS, narrow, RX), `aprs_flags2` (iGate, iGate TX, messaging, UDT,
-to APRS-IS, mute), `aprs_region`, `aprs_ssid`, `aprs_freq_hz`, `aprs_dmr_dst`, `aprs_interval_s`, `aprs_distance_m`,
+to APRS-IS, mute), `aprs_ui` (Freq in beacon off, Pop-up, miles; read even before `aprs_stored`, 0 = the defaults),
+`aprs_popup_s` (0 = 10 s), `aprs_region`, `aprs_ssid`, `aprs_freq_hz`, `aprs_dmr_dst`, `aprs_interval_s`, `aprs_distance_m`,
 `aprs_symbol`, `aprs_path`, `aprs_level`, `aprs_power` (0 = the radio's current level, n = the board's level n - 1),
 `aprs_txdelay`, `aprs_misc` bits 0-3 (via, digipeater). The position fields in the same record (`aprs_lat`,
 `aprs_lon`, `aprs_alt_m`, `aprs_pos_src`, the DMR GPS Info flag, `aprs_misc` bits 4-7) are the position service's

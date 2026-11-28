@@ -279,6 +279,7 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | `BATTERY_SAVE` | ● | ● | ● | ● | ● | ● | ● | ● | ● | ● |
 | `VIBRATE` | ? | ✕ | ● | ✕ | ✕ | ✕ | ✕ | ✕ | ✕ | ✕ |
 | `BT_PTT` | ? | ✕ | ✕ | ? | ✕ | ✕ | ? | ● | ● | ✕ |
+| `BT_KISS` | ○ | ○ | ○ | ○ | ○ | ○ | ○ | ○ | ○ | ○ |
 | `GPS` | ● | ● | ✕ | ● | ● | ● | ● | ● | ● | ✕ |
 | `AUDIO_PROBE` | … | ○ | … | … | … | ○ | ○ | … | … | … |
 | `STUB_ENTRY` | ● | ● | ● | ● | ● | ● | ● | ● | ● | ● |
@@ -295,6 +296,7 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | `APRS_AFSK` | ● | ● | ● | ● | ● | ● | ● | ● | ● | ● |
 | `APRS_DMR` | ● | ● | ● | ● | ● | ● | ● | ● | ● | ● |
 | `APRS_RX` | ● | ● | ● | … | … | ● | ● | ○ | ● | ● |
+| `APRS_QSY` | ○ | ○ | ○ | ○ | ○ | ○ | ○ | ○ | ○ | ○ |
 | `APRS_IGATE` | ● | ○ | ● | … | … | ○ | ● | ○ | ● | ● |
 | `GPS_SKY` | ● | ● | ✕ | ● | ● | ● | ● | ● | ● | ✕ |
 | `SATELLITE_TLE` | ● | ● | ● | ● | ● | ● | ● | ○ | ○ | ● |

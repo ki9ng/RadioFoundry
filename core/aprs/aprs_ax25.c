@@ -427,6 +427,43 @@ static void own_to_is(const char *info, size_t n)
 
 // --- Beacons (lock held) ---
 
+// The voice channel our beacons offer (aprs.org freqspec): side A's FM channel in an amateur band, not the APRS
+// frequency itself. The tone: CTCSS on transmit only 'T', on both the same 'C', DCS 'D' (inverted DCS has no field);
+// narrow writes it lower case. The offset when the channel has a split of at most 9.99 MHz; a simplex channel where
+// the band plan has repeaters says so ("-000"), else no offset
+void aprs_ax25_voice(const aprs_radio_t *r)
+{
+#if !CONFIG_APRS_QSY
+	(void)r;
+#else
+	aprs_freq_t *v = &aprs_s.voice;
+	memset(v, 0, sizeof(*v));
+	v->offset_10k = APRS_FREQ_OFFSET_STD;
+	uint32_t rx = r->voice_rx_hz, tx = r->voice_tx_hz != 0 ? r->voice_tx_hz : r->voice_rx_hz;
+	if (!aprs_s.cfg.freq_beacon || rx == 0 || rx == aprs_cfg_freq(&aprs_s.cfg) || !aprs_amateur_hz(rx)) {
+		return;
+	}
+	v->hz = rx;
+	v->narrow = r->voice_narrow;
+	if (r->voice_tx_tone_type == TONE_CTCSS) {
+		bool both = r->voice_rx_tone_type == TONE_CTCSS && r->voice_rx_tone == r->voice_tx_tone;
+		v->tone_kind = both ? APRS_FREQ_TONE_SQL : APRS_FREQ_TONE_ENC;
+		v->tone = r->voice_tx_tone;
+	} else if (r->voice_tx_tone_type == TONE_DCS) {
+		v->tone_kind = APRS_FREQ_TONE_DCS;
+		v->tone = r->voice_tx_tone;
+	}
+	int32_t split = (int32_t)(tx - rx);
+	if (split == 0) {
+		if (aprs_freq_std_offset_hz(rx) != 0) {
+			v->offset_10k = 0;
+		}
+	} else if (split % 10000 == 0 && split >= -9990000 && split <= 9990000) {
+		v->offset_10k = (int16_t)(split / 10000);
+	}
+#endif
+}
+
 static size_t build_beacon(const position_fix_t *f)
 {
 	aprs_report_t r;
@@ -442,6 +479,24 @@ static size_t build_beacon(const position_fix_t *f)
 	r.messaging = aprs_s.cfg.messaging;
 	r.ambiguity = aprs_s.cfg.compressed ? 0 : position_ambiguity();
 	r.comment = aprs_s.comment;
+#if CONFIG_APRS_QSY
+	// Our voice channel first, then the codeplug's comment, cut at APRS_COMMENT_MAX as a comment always is
+	char c[APRS_COMMENT_MAX + 1];
+	size_t k = aprs_freq_build(&aprs_s.voice, c, APRS_COMMENT_MAX);
+	if (k != 0) {
+		size_t n = strlen(aprs_s.comment);
+		if (n != 0 && k + 1u < APRS_COMMENT_MAX) {
+			c[k++] = ' ';
+			if (n > APRS_COMMENT_MAX - k) {
+				n = APRS_COMMENT_MAX - k;
+			}
+			memcpy(c + k, aprs_s.comment, n);
+			k += n;
+		}
+		c[k] = '\0';
+		r.comment = c;
+	}
+#endif
 	return aprs_build_position(&r, aprs_s.info, sizeof(aprs_s.info));
 }
 
@@ -625,6 +680,9 @@ static aprs_station_t *station_touch(const char *call)
 		s = &aprs_s.st[0];
 		memset(s, 0, sizeof(*s));
 		memcpy(s->call, call, strnlen(call, sizeof(s->call) - 1u));
+#if CONFIG_APRS_QSY
+		s->alt_m = APRS_ALT_NONE;
+#endif
 	} else if (s != &aprs_s.st[0]) {
 		aprs_station_t t = *s;	// most recent first
 		memmove(&aprs_s.st[1], &aprs_s.st[0], (size_t)(s - &aprs_s.st[0]) * sizeof(aprs_station_t));
@@ -658,10 +716,33 @@ static void station_update(const ax25_frame_t *f, const aprs_parsed_t *p)
 		s->sym_code = p->pos.sym_code;
 		s->course = p->pos.course;
 		s->speed_kn = p->pos.speed_kn;
+#if CONFIG_APRS_QSY
+		s->alt_m = p->pos.alt_m;
+		// The pop-up (ui): a station's own position, not one it relays as an object
+		aprs_s.v.pos_serial++;
+		memcpy(aprs_s.v.pos_call, call, sizeof(aprs_s.v.pos_call));
+		aprs_s.v.pos_direct = direct;
+#endif
 	}
 	if (p->text != NULL && p->type != APRS_T_MESSAGE) {
-		size_t k = p->text_len < sizeof(s->text) - 1u ? p->text_len : sizeof(s->text) - 1u;
-		memcpy(s->text, p->text, k);
+		// A voice frequency at its start (aprs.org freqspec) is kept apart; the text shown starts after its fields.
+		// Objects and items carry a repeater's frequency, not the sender's: only a station's own report counts
+		const char *t = p->text;
+		size_t n = p->text_len;
+#if CONFIG_APRS_QSY
+		if (p->type != APRS_T_OBJECT && p->type != APRS_T_ITEM) {
+			// A position's comment says what the station offers now; a status without one leaves it
+			aprs_freq_t fq;
+			size_t used = aprs_freq_parse(t, n, &fq);
+			if (fq.hz != 0 || p->has_pos) {
+				s->freq = fq;
+			}
+			t += used;
+			n -= used;
+		}
+#endif
+		size_t k = n < sizeof(s->text) - 1u ? n : sizeof(s->text) - 1u;
+		memcpy(s->text, t, k);
 		s->text[k] = '\0';
 	}
 }

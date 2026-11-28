@@ -283,6 +283,20 @@ bool ui_svc_emergency(bool on);
 bool ui_svc_emergency_active(void);
 // dmr-ext: a new emergency alert heard becomes UI_EV_EMERGENCY (ok: an alarm, else a call); run from ui_svc_poll
 void ui_svc_emergency_poll(void);
+// The VFO tuned to a whole channel at once (an APRS QSY, CONFIG_APRS_RX): FM, receive and transmit frequency (tx_hz
+// = rx_hz: simplex), tones and width. A scan stops first. The first tune remembers where the radio was (channel or
+// VFO), for ui_svc_vfo_back, until the user tunes away himself (ui_svc_vfo_tune_track). False: a frequency outside
+// the radio's bands, nothing changed
+typedef struct {
+	uint32_t rx_hz, tx_hz;
+	subtone_t rx_tone, tx_tone;
+	bool narrow;
+} ui_vfo_tune_t;
+bool ui_svc_vfo_tune(const radio_view_t *v, const ui_vfo_tune_t *t);
+// Back where the radio was before the tune; *hz the receive frequency it goes back to, 0 a channel. False: none kept
+bool ui_svc_vfo_back(uint32_t *hz);
+// Every UI pass: the way back is dropped once the radio has been on the tuned frequency and left it
+void ui_svc_vfo_tune_track(const radio_view_t *v);
 // Every UI pass: fire UI_EV_APRS_MESSAGE when a new message addressed to us arrives (CONFIG_APRS_RX; weak no-op without it)
 void ui_svc_aprs_msg_poll(void);
 // The emergency screen was acknowledged: the received alert is dismissed (weak no-op without dmr-ext)
@@ -502,6 +516,7 @@ typedef enum {
 				// says why
 	UI_EV_CODEPLUG_FOREIGN,	// a codeplug write is held: ask what to do with another firmware's codeplug
 	UI_EV_APRS_MESSAGE,	// an APRS message addressed to us: name = sender callsign, text = message text
+	UI_EV_APRS_HEARD,	// a station heard with its own position: name = its callsign, ok = without a digipeater
 } ui_event_kind_t;
 
 typedef struct {

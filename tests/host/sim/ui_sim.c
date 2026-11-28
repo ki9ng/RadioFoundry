@@ -518,8 +518,11 @@ static struct {
 	bool no_speed, no_course, zero_motion, no_station_pos, same_age, empty_text, long_text;
 	bool reordered;		// a packet moves the second station to the front
 	bool no_pos;		// "aprs:nopos": no position of our own (no GPS fix, no fixed position)
+	bool no_freq;		// "aprs:nofreq": the first station's beacon offers no voice frequency
 	aprs_cfg_t cfg;
 	uint32_t sent;
+	uint32_t qsy_hz;	// the last QSY's frequency (ui_svc_aprs_qsy)
+	bool qsy_back;		// a QSY to undo
 } aprs_sim;
 static void aprs_sim_reset(void)
 {
@@ -528,6 +531,8 @@ static void aprs_sim_reset(void)
 	aprs_sim.cfg.ssid = 7;
 	aprs_sim.cfg.path = APRS_PATH_WIDE1_WIDE2;
 	aprs_sim.cfg.level = 50;
+	aprs_sim.cfg.freq_beacon = true;
+	aprs_sim.cfg.popup_s = APRS_POPUP_S_DEFAULT;
 }
 bool ui_svc_aprs_view(aprs_view_t *v)
 {
@@ -581,8 +586,35 @@ bool ui_svc_aprs_station(uint8_t i, aprs_station_t *out)
 	strcpy(out->text, aprs_sim.empty_text ? "" : aprs_sim.long_text ? "12345678901234567890123" :
 	       i == 0 ? "On the road" : "At home");
 	out->pos_ms = aprs_sim.same_age ? out->heard_ms : 0;	// the position heard at start, the packets since (heard_ms) without one
+	out->alt_m = i == 0 ? 250 : APRS_ALT_NONE;
+	out->freq.offset_10k = APRS_FREQ_OFFSET_STD;
+	if (i == 0 && !aprs_sim.no_freq) {	// "146.685MHz T100 -060"
+		out->freq.hz = 146685000u;
+		out->freq.tone_kind = APRS_FREQ_TONE_ENC;
+		out->freq.tone = 1000;
+		out->freq.offset_10k = -60;
+	}
 	return true;
 }
+// QSY: recorded, always in band here; Back on Home undoes it once
+uint8_t ui_svc_aprs_qsy(const radio_view_t *v, const aprs_freq_t *f)
+{
+	(void)v;
+	if (f->hz == 0)
+		return UI_QSY_NONE;
+	aprs_sim.qsy_hz = f->hz;
+	aprs_sim.qsy_back = true;
+	return UI_QSY_OK;
+}
+bool ui_svc_aprs_qsy_undo(uint32_t *hz)
+{
+	if (!aprs_sim.qsy_back)
+		return false;
+	aprs_sim.qsy_back = false;
+	*hz = 0;
+	return true;
+}
+void ui_svc_aprs_qsy_track(const radio_view_t *v) { (void)v; }
 bool ui_svc_aprs_station_find(const char *call, aprs_station_t *out)
 {
 	for (uint8_t i = 0; i < ui_svc_aprs_station_count(); i++) {
@@ -3055,6 +3087,11 @@ static bool check(const char *kv, char *err, size_t len)
 	else if (strcmp(key, "pos_lon") == 0) snprintf(got, sizeof got, "%d", (int)ui_svc_setting_get(UI_SET_POS_FIXED_LON));
 	else if (strcmp(key, "pos_dmrgps") == 0) snprintf(got, sizeof got, "%d", (int)ui_svc_setting_get(UI_SET_POS_DMR_CALLS));
 	else if (strcmp(key, "aprs_kiss") == 0) snprintf(got, sizeof got, "%u", aprs_sim.cfg.kiss);
+	else if (strcmp(key, "aprs_popup") == 0) snprintf(got, sizeof got, "%u", aprs_sim.cfg.popup);
+	else if (strcmp(key, "aprs_popup_s") == 0) snprintf(got, sizeof got, "%u", aprs_sim.cfg.popup_s);
+	else if (strcmp(key, "aprs_miles") == 0) snprintf(got, sizeof got, "%u", aprs_sim.cfg.miles);
+	else if (strcmp(key, "aprs_freq_beacon") == 0) snprintf(got, sizeof got, "%u", aprs_sim.cfg.freq_beacon);
+	else if (strcmp(key, "qsy") == 0) snprintf(got, sizeof got, "%u", (unsigned)aprs_sim.qsy_hz);
 #if CONFIG_DMR_ROAMING
 	else if (strcmp(key, "roam") == 0) snprintf(got, sizeof got, "%u", view.roam.state);	// RROAM_STATE_*
 	else if (strcmp(key, "roamzone") == 0) snprintf(got, sizeof got, "%u", view.roam.zone_on);
@@ -3613,6 +3650,11 @@ static bool run_token(char *t, char *err, size_t len)
 		aprs_sim.same_age = strcmp(arg, "sameage") == 0;
 		aprs_sim.empty_text = strcmp(arg, "emptytext") == 0;
 		aprs_sim.long_text = strcmp(arg, "longtext") == 0;
+		aprs_sim.no_freq = strcmp(arg, "nofreq") == 0;
+		if (strcmp(arg, "popup") == 0 || strcmp(arg, "popupdigi") == 0) {	// a station heard with its position
+			ui_aprs_heard("Q4WABC-15", strcmp(arg, "popup") == 0);
+			advance(200);
+		}
 		if (strcmp(arg, "heard") == 0) {
 			ui_push(SCR_APRS_HEARD, 0);
 			advance(200);

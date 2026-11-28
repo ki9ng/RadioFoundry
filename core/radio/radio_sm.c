@@ -6221,6 +6221,29 @@ static void aprs_rf_service(radio_sm_t *sm, const radio_status_t *st, uint32_t n
 static inline void aprs_rf_abort(radio_sm_t *sm, uint32_t now_ms) { (void)sm; (void)now_ms; }
 #endif
 
+#if CONFIG_APRS_QSY
+// The voice channel our beacons offer: side A's (dual watch: channel A). Taken while the receiver is on it as the
+// user left it; kept while it is away: on the APRS frequency for a transmission, scanning, on dual watch's channel B
+// or looking there, a hotspot
+static void aprs_voice_note(radio_sm_t *sm)
+{
+	if (sm->aprs_phase != APRS_RF_OFF || sm->hotspot) {
+		return;
+	}
+#if CONFIG_SCAN
+	if (scan_on(&sm->scan) && (sm->scan.kind != SCAN_DUAL || sm->dual_at != 0 || dual_peeking(sm))) {
+		return;
+	}
+#endif
+	const channel_t *c = &sm->view.ch;
+	sm->aprs_voice.rx_hz = c->mode == RADIO_MODE_FM ? c->rx_hz : 0u;
+	sm->aprs_voice.tx_hz = c->tx_hz;
+	sm->aprs_voice.rx_tone = c->rx_tone;
+	sm->aprs_voice.tx_tone = c->tx_tone;
+	sm->aprs_voice.narrow = c->bw == RADIO_BW_12K5;
+}
+#endif
+
 #if CONFIG_APRS
 // Every poll, before anything else: the engine, the "after PTT" trigger, a transmission to start
 static void aprs_poll(radio_sm_t *sm, uint32_t now_ms)
@@ -6240,6 +6263,16 @@ static void aprs_poll(radio_sm_t *sm, uint32_t now_ms)
 	r.fm_rx = sm->aprs_phase == APRS_RF_OFF && sm->view.ch.mode == RADIO_MODE_FM && !sm->hotspot &&
 		  sm->view.state != RS_TX;
 	r.rx_hz = sm->view.ch.rx_hz;
+#if CONFIG_APRS_QSY
+	aprs_voice_note(sm);
+	r.voice_rx_hz = sm->aprs_voice.rx_hz;
+	r.voice_tx_hz = sm->aprs_voice.tx_hz;
+	r.voice_rx_tone_type = sm->aprs_voice.rx_tone.type;
+	r.voice_rx_tone = sm->aprs_voice.rx_tone.value;
+	r.voice_tx_tone_type = sm->aprs_voice.tx_tone.type;
+	r.voice_tx_tone = sm->aprs_voice.tx_tone.value;
+	r.voice_narrow = sm->aprs_voice.narrow;
+#endif
 #endif
 #if CONFIG_DMR
 	r.on_dmr = sm->dmr_running && !sm->hotspot;

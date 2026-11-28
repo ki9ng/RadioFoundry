@@ -253,7 +253,10 @@ typedef struct {
 	// copy 60 bytes
 	uint8_t sig_dmr[3];
 	uint8_t sig_fm[3];
-	uint8_t reserved11[2];		// 0
+	// APRS screens and beacon (ki9ng fork; was reserved11[2], so an older record reads 0 = the defaults): SETTINGS_APRSUI_*
+	// bits, and the pop-up's time in seconds (0 = APRS_POPUP_S_DEFAULT)
+	uint8_t aprs_ui;
+	uint8_t aprs_popup_s;
 } settings_t;
 
 // Pages: settings_t is stored as records of SETTINGS_PAGE_BYTES each (settings-store.md 2.1). Only the pages its size
@@ -466,6 +469,10 @@ static inline void settings_set_tones_off(settings_t *s, uint8_t off)
 #define SETTINGS_APRS2_TO_IS		0x10u	// our own beacons to APRS-IS through the host helper
 #define SETTINGS_APRS2_DMR_GPS		0x20u	// our position in DMR voice calls (ETSI GPS Info LC, CONFIG_DMR_GPS)
 #define SETTINGS_APRS2_MUTE		0x40u	// the speaker stays off on the APRS frequency (decoding goes on)
+#define SETTINGS_APRSUI_FREQ_OFF	0x01u	// no voice frequency in our beacon comment (0: it goes in)
+#define SETTINGS_APRSUI_POPUP_SHIFT	1	// bits 1-2: aprs_popup_t (0 every station, 1 off, 2 heard direct)
+#define SETTINGS_APRSUI_POPUP_MASK	0x06u
+#define SETTINGS_APRSUI_MILES		0x08u	// mi, mph and ft on the APRS screens (0: km, km/h and m)
 // aprs_misc bit 7: the position service's settings are set (core/position: aprs_lat, aprs_lon, aprs_alt_m,
 // aprs_pos_src, the ambiguity and SETTINGS_APRS2_DMR_GPS). They are also taken when aprs_stored is 1
 #define SETTINGS_APRS_MISC_POSITION	0x80u

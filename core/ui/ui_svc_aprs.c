@@ -59,18 +59,31 @@ bool ui_svc_aprs_msg_delete(uint8_t i) { return aprs_msg_delete(i); }
 #endif
 
 #if CONFIG_APRS_RX
-void ui_svc_aprs_msg_poll(void)
+// In a frame of its own (noinline): the APRS view and an event are large, and inlined into the UI task's poll they
+// would sit under every path the task takes (docs/dev/stack-check.md)
+__attribute__((noinline)) void ui_svc_aprs_msg_poll(void)
 {
 	static uint32_t seen;
 	aprs_view_t v;
 	aprs_get_view(&v);
+	ui_event_t ev;
+#if CONFIG_APRS_QSY
+	static uint32_t pos_seen;
+	if (v.pos_serial != pos_seen) {	// a station heard with its position: the pop-up's (ui_aprs_heard)
+		pos_seen = v.pos_serial;
+		memset(&ev, 0, sizeof ev);
+		ev.kind = UI_EV_APRS_HEARD;
+		ev.ok = v.pos_direct;
+		strncpy(ev.name, v.pos_call, sizeof ev.name - 1);
+		ui_notify(&ev);
+	}
+#endif
 	if (v.msg_serial == seen)
 		return;
 	seen = v.msg_serial;
 	aprs_msg_t m;
 	if (!aprs_msg_peek(0, &m))
 		return;
-	ui_event_t ev;
 	memset(&ev, 0, sizeof ev);
 	ev.kind = UI_EV_APRS_MESSAGE;
 	strncpy(ev.name, m.from, sizeof ev.name - 1);
@@ -110,4 +123,35 @@ bool ui_svc_aprs_range(const aprs_station_t *s, uint32_t *m, uint16_t *deg)
 	return true;
 }
 #endif
+#if CONFIG_APRS_QSY
+// QSY: the station's frequency as a whole channel, its split the one it gives or the band plan's
+uint8_t ui_svc_aprs_qsy(const radio_view_t *v, const aprs_freq_t *f)
+{
+	if (f->hz == 0) {
+		return UI_QSY_NONE;
+	}
+	if (v->scan == 3) {
+		return UI_QSY_DUAL;	// dual watch's channels are the user's two picks: not changed under it
+	}
+	int32_t off = f->toff ? 0 : f->offset_10k == APRS_FREQ_OFFSET_STD ? aprs_freq_std_offset_hz(f->hz) :
+		(int32_t)f->offset_10k * 10000;
+	ui_vfo_tune_t t;
+	memset(&t, 0, sizeof t);
+	t.rx_hz = f->hz;
+	t.tx_hz = (uint32_t)((int32_t)f->hz + off);
+	t.narrow = f->narrow;
+	if (!f->toff && f->tone_kind != APRS_FREQ_TONE_NONE) {
+		t.tx_tone.type = f->tone_kind == APRS_FREQ_TONE_DCS ? TONE_DCS : TONE_CTCSS;
+		t.tx_tone.value = f->tone;
+		if (f->tone_kind != APRS_FREQ_TONE_ENC) {
+			t.rx_tone = t.tx_tone;	// 'C' and 'D' on both; 'T' on transmit only
+		}
+	}
+	return ui_svc_vfo_tune(v, &t) ? UI_QSY_OK : UI_QSY_BAND;
+}
+
+bool ui_svc_aprs_qsy_undo(uint32_t *hz) { return ui_svc_vfo_back(hz); }
+void ui_svc_aprs_qsy_track(const radio_view_t *v) { ui_svc_vfo_tune_track(v); }
+#endif
+
 #endif

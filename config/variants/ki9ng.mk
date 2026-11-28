@@ -37,4 +37,6 @@ MCU_DEFS := $(filter-out -DSTART_TASK_STACK=%,$(MCU_DEFS)) -DSTART_TASK_STACK=72
 CONFIG_NET_TCP ?= y
 # KISS over Bluetooth SPP for APRSdroid (ki9ng fork; about 0.6 KB)
 CONFIG_BT_KISS ?= y
+# Voice frequencies in APRS: beacon, heard stations, pop-up, QSY (ki9ng fork; about 400 B of RAM)
+CONFIG_APRS_QSY ?= y
 endif

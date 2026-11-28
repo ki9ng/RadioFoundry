@@ -592,6 +592,15 @@ typedef struct {
 	uint32_t aprs_listen_ms;	// start of the wait for a clear channel
 	uint32_t aprs_rand;		// p-persistence
 	aprs_rf_job_t aprs_job;
+#if CONFIG_APRS_QSY
+	// The voice channel our beacons offer (aprs.org freqspec): side A's, as it was when the receiver was last on it
+	// (aprs_voice_note). rx_hz 0: none (not FM)
+	struct {
+		uint32_t rx_hz, tx_hz;
+		subtone_t rx_tone, tx_tone;
+		bool narrow;
+	} aprs_voice;
+#endif
 #endif
 	bool tx_no_ptt;		// on the air without PTT (a DMR data burst list): not the user's transmission, no "after PTT"
 #if CONFIG_SATELLITE_TLE

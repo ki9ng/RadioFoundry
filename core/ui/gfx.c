@@ -423,6 +423,55 @@ static void seg(int x0, int y0, int x1, int y1, int t, color_t fg)
 	}
 }
 
+int gfx_isin(int deg)
+{
+	static const uint16_t q[16] = { 0, 27, 53, 79, 104, 128, 150, 171, 190, 207, 222, 234, 243, 250, 255, 256 };
+	deg %= 360;
+	if (deg < 0)
+		deg += 360;
+	int sign = deg >= 180 ? -1 : 1;
+	deg %= 180;
+	if (deg > 90)
+		deg = 180 - deg;
+	int i = deg / 6, r = deg % 6;
+	int v = q[i] + (i < 15 ? (q[i + 1] - q[i]) * r / 6 : 0);
+	return sign * v;
+}
+
+void gfx_circle(int cx, int cy, int r, color_t c)
+{
+	int x = r, y = 0, e = 1 - r;
+	while (x >= y) {
+		gfx_pixel(cx + x, cy + y, c); gfx_pixel(cx - x, cy + y, c);
+		gfx_pixel(cx + x, cy - y, c); gfx_pixel(cx - x, cy - y, c);
+		gfx_pixel(cx + y, cy + x, c); gfx_pixel(cx - y, cy + x, c);
+		gfx_pixel(cx + y, cy - x, c); gfx_pixel(cx - y, cy - x, c);
+		y++;
+		if (e < 0) {
+			e += 2 * y + 1;
+		} else {
+			x--;
+			e += 2 * (y - x) + 1;
+		}
+	}
+}
+
+void gfx_disc(int cx, int cy, int r, color_t c)
+{
+	int dx = r;
+	for (int dy = 0; dy <= r; dy++) {
+		while (dx * dx + dy * dy > r * r + r)
+			dx--;
+		gfx_hline(cx - dx, cy + dy, 2 * dx + 1, c);
+		gfx_hline(cx - dx, cy - dy, 2 * dx + 1, c);
+	}
+}
+
+void gfx_line(int x0, int y0, int x1, int y1, color_t c)
+{
+	seg(x0, y0, x1, y1, 1, c);
+}
+
 // The icon glyphs (font.h), in the box of the font's capital H (less a column on the right in the larger fonts), so
 // they sit with the text; a space follows them
 static void icon_glyph(const font_t *f, int x, int y, uint8_t c, color_t fg)

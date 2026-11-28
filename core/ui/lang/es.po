@@ -838,6 +838,26 @@ msgid "Custom"
 msgstr "Propio"
 
 #: core/ui/ui_aprs.c
+msgctxt "APRS_VALUE_POPUP_ALL"
+msgid "All"
+msgstr "Todas"
+
+#: core/ui/ui_aprs.c
+msgctxt "APRS_VALUE_POPUP_DIRECT"
+msgid "Heard direct"
+msgstr "Oídas directo"
+
+#: core/ui/ui_aprs.c
+msgctxt "APRS_HINT_NUMBER"
+msgid "{Up Down 0-9  OK keep  Back|0-9  OK keep  Back}"
+msgstr "{Arriba Abajo 0-9  OK guardar  Atrás|0-9  OK guardar  Atrás}"
+
+#: core/ui/ui_aprs.c
+msgctxt "HINT_0_9_PICK_BACK"
+msgid "0-9 pick  Back"
+msgstr "0-9 elegir  Atrás"
+
+#: core/ui/ui_aprs.c
 msgctxt "APRS_WHY_NO_CALLSIGN"
 msgid "Set your callsign (the radio name) in qdmr."
 msgstr "Define tu indicativo (nombre de radio) en qdmr."
@@ -948,6 +968,26 @@ msgid "Mute APRS audio"
 msgstr "Silenciar APRS"
 
 #: core/ui/ui_aprs.c
+msgctxt "APRS_LABEL_FREQ_IN_BEACON"
+msgid "Freq in beacon"
+msgstr "Frec. en baliza"
+
+#: core/ui/ui_aprs.c
+msgctxt "APRS_LABEL_POPUP"
+msgid "Pop-up"
+msgstr "Emergente"
+
+#: core/ui/ui_aprs.c
+msgctxt "APRS_LABEL_POPUP_TIME"
+msgid "Pop-up time"
+msgstr "Tiempo emergente"
+
+#: core/ui/ui_aprs.c
+msgctxt "APRS_LABEL_UNITS"
+msgid "Units"
+msgstr "Unidades"
+
+#: core/ui/ui_aprs.c
 msgctxt "APRS_LABEL_NMEA_ON_USB"
 msgid "NMEA on USB"
 msgstr "NMEA por USB"
@@ -993,11 +1033,6 @@ msgid "This radio can't receive APRS"
 msgstr "Esta radio no recibe APRS"
 
 #: core/ui/ui_aprs.c
-msgctxt "HINT_0_9_PICK_BACK"
-msgid "0-9 pick  Back"
-msgstr "0-9 elegir  Atrás"
-
-#: core/ui/ui_aprs.c
 msgctxt "APRS_TITLE_HEARD"
 msgid "Heard"
 msgstr "Oídas"
@@ -1012,10 +1047,15 @@ msgctxt "APRS_EMPTY_NOTHING_HEARD"
 msgid "Nothing heard yet"
 msgstr "Aún nada oído"
 
-#: core/ui/ui_aprs.c core/ui/ui_menus.c
-msgctxt "WORD_MESSAGE"
-msgid "Message"
-msgstr "Mensaje"
+#: core/ui/ui_aprs.c
+msgctxt "APRS_HINT_STATION_QSY"
+msgid "{# QSY  OK msg  Back|# QSY  OK msg}"
+msgstr "{# QSY  OK msj  Atrás|# QSY  OK msj}"
+
+#: core/ui/ui_aprs.c
+msgctxt "APRS_HINT_STATION"
+msgid "OK msg  Back"
+msgstr "OK msj  Atrás"
 
 #: core/ui/ui_aprs.c
 msgctxt "APRS_BODY_STATION_GONE"
@@ -1023,44 +1063,64 @@ msgid "No longer in list"
 msgstr "Ya no está en lista"
 
 #: core/ui/ui_aprs.c
-msgctxt "APRS_LABEL_DISTANCE"
-msgid "{Distance|Dist|}"
-msgstr "{Distancia|Dist|}"
-
-#: core/ui/ui_aprs.c
 msgctxt "APRS_VALUE_DIRECT"
 msgid "Direct"
 msgstr "Directo"
 
 #: core/ui/ui_aprs.c
-msgctxt "APRS_VALUE_VIA_DIGIPEATER"
-msgid "Via digipeater"
-msgstr "Vía repetidor"
+msgctxt "APRS_VALUE_DIGI"
+msgid "Digi"
+msgstr "Digi"
 
 #: core/ui/ui_aprs.c
-msgctxt "APRS_LABEL_POSITION_AGE"
-msgid "{Position age|Pos age}"
-msgstr "{Edad posición|Edad pos}"
-
-#: core/ui/ui_aprs.c core/ui/ui_gps.c
-msgctxt "LABEL_SPEED"
-msgid "Speed"
-msgstr "Velocidad"
+msgctxt "APRS_LABEL_SPD"
+msgid "Spd "
+msgstr "Vel "
 
 #: core/ui/ui_aprs.c
-msgctxt "APRS_LABEL_COURSE"
-msgid "Course"
-msgstr "Rumbo"
+msgctxt "APRS_LABEL_CRS"
+msgid "Crs "
+msgstr "Rumbo "
 
 #: core/ui/ui_aprs.c
-msgctxt "APRS_LABEL_SYMBOL"
-msgid "Symbol"
-msgstr "Símbolo"
+msgctxt "APRS_LABEL_ALT"
+msgid "Alt "
+msgstr "Alt "
 
 #: core/ui/ui_aprs.c
-msgctxt "APRS_LABEL_PACKETS"
-msgid "Packets"
-msgstr "Paquetes"
+msgctxt "APRS_TOAST_NO_FREQUENCY"
+msgid "No frequency in its beacon"
+msgstr "Su baliza no trae frecuencia"
+
+#: core/ui/ui_aprs.c
+msgctxt "APRS_TOAST_QSY"
+msgid "QSY "
+msgstr "QSY "
+
+#: core/ui/ui_aprs.c
+msgctxt "APRS_TOAST_QSY_BAND"
+msgid "QSY: not a band this radio has"
+msgstr "QSY: banda que la radio no tiene"
+
+#: core/ui/ui_aprs.c
+msgctxt "APRS_TOAST_QSY_DUAL"
+msgid "QSY: turn dual watch off first"
+msgstr "QSY: apague la doble escucha"
+
+#: core/ui/ui_aprs.c core/ui/ui_menus.c
+msgctxt "WORD_MESSAGE"
+msgid "Message"
+msgstr "Mensaje"
+
+#: core/ui/ui_aprs.c
+msgctxt "APRS_TOAST_BACK_TO"
+msgid "Back to "
+msgstr "De vuelta a "
+
+#: core/ui/ui_aprs.c
+msgctxt "APRS_TOAST_BACK_TO_CHANNEL"
+msgid "Back to the channel"
+msgstr "De vuelta al canal"
 
 #: core/ui/ui_aprs.c
 msgctxt "HINT_OK_CHOOSE_BACK"
@@ -1486,6 +1546,11 @@ msgstr "Lon"
 msgctxt "GPS_LABEL_ALT"
 msgid "Alt"
 msgstr "Alt"
+
+#: core/ui/ui_gps.c
+msgctxt "LABEL_SPEED"
+msgid "Speed"
+msgstr "Velocidad"
 
 #: core/ui/ui_gps.c
 msgctxt "GPS_EMPTY_NO_POSITIONS"

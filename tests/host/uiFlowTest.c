@@ -1037,6 +1037,40 @@ static const flow_t flows[] = {
 	{ "G GPS grid page", "ok 6 2", "4", "shows=FN42li", 1, false },
 	{ "G GPS pages wrap", "ok 6 2", "up down", "shows=Status", 2, false },
 	{ "A KISS on USB", "ok 6 8", "up up up up ok", "aprs_kiss=1", 5, false },
+	// The beacon's frequency, the pop-up and the units (9, 0, then up from the bottom: Units 5, Pop-up time 6)
+	{ "A frequency in the beacon off", "ok 6 8", "9", "aprs_freq_beacon=0", 1, false },
+	{ "A pop-up: all, off, heard direct", "ok 6 8", "0 0", "aprs_popup=2 shows=Heard_direct", 2, false },
+	{ "A pop-up time: Up and Down step 1", "ok 6 8 up up up up up up", "ok up up up down ok", "aprs_popup_s=12", 6, false },
+	{ "A pop-up time: two digits keep it", "ok 6 8 up up up up up up", "ok 2 5", "aprs_popup_s=25 screen=aprs", 3,
+	  false },
+	{ "A pop-up time: one digit and OK", "ok 6 8 up up up up up up", "ok 7 ok", "aprs_popup_s=7", 3, false },
+	{ "A pop-up time: typed past the top", "ok 6 8 up up up up up up", "ok 9 9", "aprs_popup_s=60", 3, false },
+	{ "A pop-up time: typed under the bottom", "ok 6 8 up up up up up up", "ok 0 0", "aprs_popup_s=1", 3, false },
+	{ "A pop-up time: stops at the end", "ok 6 8 up up up up up up ok 6 0", "ok up ok", "aprs_popup_s=60", 3, false },
+	{ "A pop-up time: Back leaves it", "ok 6 8 up up up up up up", "ok 3 back", "aprs_popup_s=10 screen=aprs", 3,
+	  false },
+	{ "A pop-up time: the digits don't pick rows", "ok 6 8 up up up up up up", "ok 3", "screen=aprs aprs_region=0", 2,
+	  false },
+	{ "A units in miles", "ok 6 8 up up up up up", "ok", "aprs_miles=1 shows=mi", 1, false },
+	{ "A stations heard in miles", "ok 6 8 up up up up up ok", "down down ok", "screen=aprs-heard shows=9.0_mi_NE", 3,
+	  false },
+	// QSY from a heard station (CONTEXT), and Back on Home undoes it
+	{ "A station QSY", "ok 6 8 up up up ok ok", "ctx", "screen=home qsy=146685000 toast=QSY_146.685-_T100", 1, false },
+	{ "A QSY undone by Back", "ok 6 8 up up up ok ok ctx", "back", "screen=home toast=Back_to_the_channel", 1, false },
+	{ "A station without a frequency: no QSY", "aprs:nofreq ok 6 8 up up up ok ok", "ctx",
+	  "screen=aprs-station qsy=0 toast=No_frequency_in_its_beacon", 1, false },
+	{ "A station screen: Down steps to the next station", "ok 6 8 up up up ok ok", "down", "shows=QJ4XYZ", 1, false },
+	// The pop-up: a station heard opens its screen on Home for the Pop-up time; a key keeps it
+	{ "A pop-up opens on Home", "aprs:popup", "", "screen=aprs-station shows=Q4WABC-15", 0, false },
+	{ "A pop-up closes after its time", "aprs:popup", "wait:10000", "screen=home", 0, false },
+	{ "A pop-up kept by a key", "aprs:popup", "down wait:20000", "screen=aprs-station", 1, false },
+	{ "A pop-up QSY", "aprs:popup", "ctx", "screen=home qsy=146685000", 1, false },
+	{ "A pop-up never over a menu", "ok aprs:popup", "", "screen=hub", 0, false },
+	{ "A pop-up off", "ok 6 8 0 long:back aprs:popup", "", "screen=home", 0, false },
+	{ "A pop-up heard direct skips a digipeated one", "ok 6 8 0 0 long:back aprs:popupdigi", "", "screen=home", 0,
+	  false },
+	{ "A pop-up heard direct takes a direct one", "ok 6 8 0 0 long:back aprs:popup", "", "screen=aprs-station", 0,
+	  false },
 	// SSID: the last row (set once); OK steps up and wraps, a long OK steps back
 	{ "A SSID shows the default", "ok 6 8", "up", "focus=SSID shows=7 aprs_ssid=7", 1, false },
 	{ "A SSID: the next one", "ok 6 8 up", "ok ok", "aprs_ssid=9 shows=9", 2, false },
@@ -1045,7 +1079,8 @@ static const flow_t flows[] = {
 	{ "A stations heard", "", "ok 6 8 up up up ok", "screen=aprs-heard count=2", 7, false },
 	{ "A station message survives a newer packet", "ok 6 8 up up up ok ok aprs:reorder", "ok",
 	  "screen=compose shows=Q4WABC-15", 1, false },
-	{ "A station opens its Message action", "ok 6 8 up up up ok", "ok", "screen=aprs-station shows=Message", 1, false },
+	{ "A station opens its screen", "ok 6 8 up up up ok", "ok", "screen=aprs-station shows=Q4WABC-15 shows=OK_msg", 1,
+	  false },
 	{ "A station Message fills its callsign", "ok 6 8 up up up ok ok", "ok", "screen=compose shows=Q4WABC-15", 1, false },
 	{ "A new APRS message appears independently of DMR format", "", "ok 2", "shows=New_APRS_message", 2, false },
 	{ "A new APRS message opens its composer", "ok 2", "ok", "screen=compose shows=To_callsign", 1, false },
@@ -1898,38 +1933,25 @@ static void heard_checks(void)
 	}
 }
 
-// Detail rows remain reachable on the smallest panel; only Message opens another screen.
+// The heard station's screen at every display class: the compass with the facts beside it that the station sent
+// (distance, path and age, speed, course, altitude, its voice frequency), its comment, and only the rows it has
 static void station_checks(void)
 {
 	static const struct { const char *name, *script; } cases[] = {
-		{ "position", "wait:600000 ok 6 8 up up up ok ok expect:screen=aprs-station expect:count=10 "
-		  "down expect:shows=14.5_km_NE down expect:shows=1m down expect:shows=Direct "
-		  "down expect:shows=10m down expect:shows=19_km/h down expect:shows=40 "
-		  "down expect:shows=/> down expect:shows=On_the_road down expect:focus=Packets expect:shows=3 "
-		  "ok expect:screen=aprs-station" },
-		{ "no local position", "aprs:nopos ok 6 8 up up up ok ok expect:count=8 down expect:shows=Heard" },
-		{ "no speed", "aprs:nospeed ok 6 8 up up up ok ok expect:count=7 down down down down expect:shows=/>" },
-		{ "no station position", "ok 6 8 up up up ok down ok expect:count=5 down down "
-		  "expect:shows=Via_digipeater down expect:shows=At_home down expect:shows=Packets" },
-		{ "speed unknown", "aprs:speedunknown ok 6 8 up up up ok ok expect:count=8 "
-		  "down down down down expect:focus=Course expect:shows=40 expect:hides=Speed" },
-		{ "course unknown", "aprs:courseunknown ok 6 8 up up up ok ok expect:count=8 "
-		  "down down down down expect:focus=Speed expect:shows=19_km/h down expect:focus=Symbol" },
-		{ "known zero motion", "aprs:zero ok 6 8 up up up ok ok expect:count=9 "
-		  "down down down down expect:focus=Speed expect:shows=0_km/h down expect:focus=Course expect:shows=0" },
-		{ "equal ages", "wait:600000 aprs:sameage ok 6 8 up up up ok ok expect:count=9 "
-		  "down down expect:focus=Heard expect:shows=1m down expect:focus=Direct down expect:focus=Speed" },
-		{ "position lost while open", "wait:600000 ok 6 8 up up up ok ok aprs:stationnopos down "
-		  "expect:count=6 expect:shows=Q4WABC-15 expect:focus=Heard expect:hides=km "
-		  "down expect:focus=Direct down expect:focus=Symbol" },
-		{ "empty text and symbol", "aprs:emptytext ok 6 8 up up up ok ok expect:count=7 "
-		  "up expect:focus=Packets up expect:focus=Course" },
-		{ "retained text", "aprs:longtext ok 6 8 up up up ok ok up up "
-		  "expect:focus=12345678901234567890123" },
-		{ "reordered detail", "ok 6 8 up up up ok ok aprs:reorder down expect:count=9 "
-		  "expect:shows=Q4WABC-15 expect:shows=14.5_km_NE up ok expect:screen=compose expect:shows=Q4WABC-15" },
-		{ "evicted", "ok 6 8 up up up ok ok aprs:evict down expect:count=2 expect:shows=No_longer_in_list "
-		  "up ok expect:screen=compose expect:shows=Q4WABC-15" },
+		{ "position", "ok 6 8 up up up ok ok expect:screen=aprs-station expect:shows=Q4WABC-15 "
+		  "expect:shows=14.5_km_NE expect:shows=146.685-_T100 "
+		  "ok expect:screen=compose expect:shows=Q4WABC-15" },
+		{ "no local position", "aprs:nopos ok 6 8 up up up ok ok expect:screen=aprs-station expect:hides=km_NE" },
+		{ "no speed", "aprs:nospeed ok 6 8 up up up ok ok expect:hides=km/h" },
+		{ "no station position", "ok 6 8 up up up ok down ok expect:shows=QJ4XYZ expect:shows=Digi "
+		  "expect:hides=km_NE expect:hides=146.685" },
+		{ "no frequency", "aprs:nofreq ok 6 8 up up up ok ok expect:hides=146.685 expect:hides=QSY" },
+		{ "steps through the stations", "ok 6 8 up up up ok ok down expect:shows=QJ4XYZ down "
+		  "expect:shows=Q4WABC-15 up expect:shows=QJ4XYZ" },
+		{ "reordered", "ok 6 8 up up up ok ok aprs:reorder expect:shows=Q4WABC-15 expect:shows=14.5_km_NE "
+		  "ok expect:screen=compose expect:shows=Q4WABC-15" },
+		{ "evicted", "ok 6 8 up up up ok ok aprs:evict down expect:shows=No_longer_in_list "
+		  "ok expect:screen=compose expect:shows=Q4WABC-15" },
 	};
 	char err[300];
 	for (int g = 0; g < sim_geom_count; g++) {

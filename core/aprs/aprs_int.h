@@ -43,6 +43,9 @@ typedef struct {
 #if CONFIG_APRS_AFSK
 	// The AX.25 half (aprs_ax25.c)
 	char comment[CODEPLUG_APRS_COMMENT + 1];	// from the codeplug's APRS configuration 1
+#if CONFIG_APRS_QSY
+	aprs_freq_t voice;	// our voice channel for the beacon comment (voice.hz 0: none; aprs_ax25_voice)
+#endif
 	char test_call[AX25_CALL_LEN + 4];
 	ax25_addr_t me;
 	bool me_ok;
@@ -127,6 +130,8 @@ void aprs_ax25_identity_from(const settings_t *st);
 void aprs_ax25_poll(uint32_t now_ms);
 // Every tick, lock held, before the beacon triggers: the host's rate limit, old station positions, what blocks RF
 void aprs_ax25_tick(uint32_t now_ms);
+// Every tick, lock held: the voice channel our beacons offer, from the radio's (aprs_radio_t.voice_*)
+void aprs_ax25_voice(const aprs_radio_t *r);
 // A beacon is due (lock held): the packet is built, queued for RF when rf says so and RF isn't blocked, and sent to
 // APRS-IS when that is on. True when it went anywhere
 bool aprs_ax25_beacon(const position_fix_t *f, bool rf);
@@ -146,6 +151,7 @@ static inline void aprs_ax25_identity(void) {}
 static inline void aprs_ax25_identity_from(const settings_t *st) { (void)st; }
 static inline void aprs_ax25_poll(uint32_t now_ms) { (void)now_ms; }
 static inline void aprs_ax25_tick(uint32_t now_ms) { (void)now_ms; }
+static inline void aprs_ax25_voice(const aprs_radio_t *r) { (void)r; }
 static inline bool aprs_ax25_beacon(const position_fix_t *f, bool rf) { (void)f; (void)rf; return false; }
 static inline void aprs_ax25_service(void) {}
 static inline bool aprs_ax25_can_send(void) { return false; }

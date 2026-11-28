@@ -15,6 +15,9 @@
 #include "aprs/aprs_beacon.h"
 #include "aprs/aprs_fmt.h"
 #include "aprs/ax25.h"
+#include "aprs/aprs_int.h"
+#include "ui/ui_svc.h"
+#include "ui/ui_svc_aprs.h"
 #include "aprs/hdlc.h"
 #include "aprs/kiss.h"
 #include "aprs/afsk.h"
@@ -23,6 +26,19 @@
 #include "fuzz.h"
 #include "ui/ui_svc_aprs.h"
 #include "ui/ui_svc.h"
+
+// The VFO tune service (ui_svc_radio.c, not linked here): the APRS QSY's calls, recorded
+static ui_vfo_tune_t qsy_tuned;
+static int qsy_tunes;
+bool ui_svc_vfo_tune(const radio_view_t *v, const ui_vfo_tune_t *t)
+{
+	(void)v;
+	qsy_tuned = *t;
+	qsy_tunes++;
+	return true;
+}
+bool ui_svc_vfo_back(uint32_t *hz) { *hz = 0; return false; }
+void ui_svc_vfo_tune_track(const radio_view_t *v) { (void)v; }
 
 static int failures;
 static int checks;
@@ -519,7 +535,8 @@ static void test_beacon_on_air(void)
 	CHECK(sm.view.state == RS_TX);
 	CHECK(sm.view.tx_auto && !radio_view_wakes(&sm.view));	// a timed beacon leaves the screen as it is
 	CHECK(nframes == 1);
-	CHECK(strcmp(frames[0], "Q1TST-7>" APRS_TOCALL ",WIDE1-1,WIDE2-1:!4903.50N/07201.75W[RadioFoundry test") == 0);
+	// The channel (146.520, simplex, no tone) first in the comment: Freq in beacon is on by default
+	CHECK(strcmp(frames[0], "Q1TST-7>" APRS_TOCALL ",WIDE1-1,WIDE2-1:!4903.50N/07201.75W[146.520MHz RadioFoundry test") == 0);
 	if (nframes > 0) {
 		printf("# on air: %s\n", frames[0]);
 	}
@@ -2159,6 +2176,155 @@ static void test_msg_poll(void)
 }
 #endif
 
+// Our voice channel in the beacon comment (aprs.org freqspec): from side A's channel as the radio passes it
+static void voice_text(const aprs_radio_t *r, char *out, size_t max)
+{
+	aprs_ax25_voice(r);
+	size_t n = aprs_freq_build(&aprs_s.voice, out, max - 1u);
+	out[n] = '\0';
+}
+
+static void test_beacon_freq(void)
+{
+	reset();
+	aprs_set_test_call("q1tst");
+	configure(0, false);
+	aprs_radio_t r;
+	char t[40];
+	memset(&r, 0, sizeof r);
+	r.voice_rx_hz = 146685000u;	// a repeater: -600 kHz, 100 Hz on transmit
+	r.voice_tx_hz = 146085000u;
+	r.voice_tx_tone_type = TONE_CTCSS;
+	r.voice_tx_tone = 1000;
+	voice_text(&r, t, sizeof t);
+	CHECK(strcmp(t, "146.685MHz T100 -060") == 0);
+	r.voice_rx_tone_type = TONE_CTCSS;	// the same tone on receive: 'C'
+	r.voice_rx_tone = 1000;
+	voice_text(&r, t, sizeof t);
+	CHECK(strcmp(t, "146.685MHz C100 -060") == 0);
+	r.voice_tx_tone_type = TONE_DCS;	// DCS, narrow: lower case
+	r.voice_tx_tone = 023;
+	r.voice_narrow = true;
+	voice_text(&r, t, sizeof t);
+	CHECK(strcmp(t, "146.685MHz d023 -060") == 0);
+	r.voice_tx_tone_type = TONE_DCS_INV;	// no field for inverted DCS
+	r.voice_narrow = false;
+	voice_text(&r, t, sizeof t);
+	CHECK(strcmp(t, "146.685MHz -060") == 0);
+	r.voice_tx_hz = r.voice_rx_hz;	// simplex where the band plan has repeaters: "-000"
+	voice_text(&r, t, sizeof t);
+	CHECK(strcmp(t, "146.685MHz -000") == 0);
+	r.voice_rx_hz = r.voice_tx_hz = 146520000u;	// simplex in a simplex part: nothing after
+	voice_text(&r, t, sizeof t);
+	CHECK(strcmp(t, "146.520MHz") == 0);
+	r.voice_rx_hz = 442100000u;	// 70 cm, +5 MHz
+	r.voice_tx_hz = 447100000u;
+	voice_text(&r, t, sizeof t);
+	CHECK(strcmp(t, "442.100MHz +500") == 0);
+	r.voice_tx_hz = 454100000u;	// a split too wide for the field: no offset
+	voice_text(&r, t, sizeof t);
+	CHECK(strcmp(t, "442.100MHz") == 0);
+	// None: digital or unknown (0), the APRS frequency itself, not amateur, the setting off
+	r.voice_rx_hz = r.voice_tx_hz = 0;
+	voice_text(&r, t, sizeof t);
+	CHECK(t[0] == '\0');
+	r.voice_rx_hz = r.voice_tx_hz = APRS_HZ;
+	voice_text(&r, t, sizeof t);
+	CHECK(t[0] == '\0');
+	r.voice_rx_hz = r.voice_tx_hz = 462562500u;
+	voice_text(&r, t, sizeof t);
+	CHECK(t[0] == '\0');
+	aprs_cfg_t c;
+	aprs_get_cfg(&c);
+	CHECK(c.freq_beacon);
+	c.freq_beacon = false;
+	aprs_set_cfg(&c, now);
+	r.voice_rx_hz = r.voice_tx_hz = 146520000u;
+	voice_text(&r, t, sizeof t);
+	CHECK(t[0] == '\0');
+	// Off: the beacon is the codeplug comment alone, as before
+	aprs_set_test_call("q1tst");
+	configure(60, false);
+	aprs_get_cfg(&c);
+	c.freq_beacon = false;
+	aprs_set_cfg(&c, now);
+	CHECK(aprs_send_now());
+	CHECK(wait_start(1, 5000));
+	CHECK(nframes == 1 && strstr(frames[0], ":!4903.50N/07201.75W[RadioFoundry test") != NULL);
+	wait_idle();
+}
+
+#if CONFIG_APRS_RX
+// A heard station's voice frequency (freqspec) is kept apart from its comment, its altitude too; the pop-up's event
+static void test_station_freq(void)
+{
+	reset();
+	aprs_set_test_call("Q1TST");
+	configure(0, false);
+	aprs_station_t s;
+	rx_line("Q1ABC-9>APRS:=4903.50N/07201.75W>146.685MHz T100 -060 Mobile/A=001234");
+	CHECK(ui_svc_aprs_station_find("Q1ABC-9", &s));
+	CHECK(s.freq.hz == 146685000u && s.freq.tone_kind == APRS_FREQ_TONE_ENC && s.freq.tone == 1000 &&
+	      s.freq.offset_10k == -60);
+	CHECK(strncmp(s.text, "Mobile", 6) == 0);
+	CHECK(s.alt_m == 376);	// 1234 ft
+	rx_line("Q1ABC-9>APRS:>On the way");	// a status without one: kept
+	CHECK(ui_svc_aprs_station_find("Q1ABC-9", &s) && s.freq.hz == 146685000u && strcmp(s.text, "On the way") == 0);
+	rx_line("Q1ABC-9>APRS:>147.240MHz +060");	// a status with one: taken
+	CHECK(ui_svc_aprs_station_find("Q1ABC-9", &s) && s.freq.hz == 147240000u && s.freq.offset_10k == 60);
+	rx_line("Q1ABC-9>APRS:=4903.50N/07201.75W>Parked");	// a position without one: cleared
+	CHECK(ui_svc_aprs_station_find("Q1ABC-9", &s) && s.freq.hz == 0 && s.alt_m == APRS_ALT_NONE);
+	rx_line("Q1ABC-9>APRS:;147.105-R*111111z4903.50N/07201.75Wr147.105MHz T100 +060");	// an object's: not its sender's
+	CHECK(ui_svc_aprs_station_find("Q1ABC-9", &s) && s.freq.hz == 0);
+	// The pop-up's event: a station's own position, with its call and whether it came direct
+	n_ev = 0;
+	ui_svc_aprs_msg_poll();
+	CHECK(n_ev == 1 && last_ev.kind == UI_EV_APRS_HEARD && strcmp(last_ev.name, "Q1ABC-9") == 0 && last_ev.ok);
+	ui_svc_aprs_msg_poll();
+	CHECK(n_ev == 1);
+	rx_line("Q1XYZ-5>APRS,Q1DIG*,WIDE2-1:=4903.50N/07201.75W>Via a digi");
+	ui_svc_aprs_msg_poll();
+	CHECK(n_ev == 2 && strcmp(last_ev.name, "Q1XYZ-5") == 0 && !last_ev.ok);
+	rx_line("Q1XYZ-5>APRS:>Status only");	// no position: no pop-up
+	ui_svc_aprs_msg_poll();
+	CHECK(n_ev == 2);
+}
+
+// QSY: a heard station's frequency as the whole channel the VFO is tuned to
+static void test_qsy(void)
+{
+	radio_view_t v;
+	memset(&v, 0, sizeof v);
+	aprs_freq_t f;
+	const char *c = "146.685MHz T100 -060";
+	aprs_freq_parse(c, strlen(c), &f);
+	qsy_tunes = 0;
+	CHECK(ui_svc_aprs_qsy(&v, &f) == UI_QSY_OK && qsy_tunes == 1);
+	CHECK(qsy_tuned.rx_hz == 146685000u && qsy_tuned.tx_hz == 146085000u && !qsy_tuned.narrow);
+	CHECK(qsy_tuned.tx_tone.type == TONE_CTCSS && qsy_tuned.tx_tone.value == 1000 && qsy_tuned.rx_tone.type == TONE_NONE);
+	c = "147.240MHz C100";	// no offset: the band plan's (+600 kHz); 'C' on both
+	aprs_freq_parse(c, strlen(c), &f);
+	ui_svc_aprs_qsy(&v, &f);
+	CHECK(qsy_tuned.tx_hz == 147840000u && qsy_tuned.rx_tone.type == TONE_CTCSS && qsy_tuned.rx_tone.value == 1000);
+	c = "446.000MHz d023";	// simplex part, DCS, narrow
+	aprs_freq_parse(c, strlen(c), &f);
+	ui_svc_aprs_qsy(&v, &f);
+	CHECK(qsy_tuned.tx_hz == 446000000u && qsy_tuned.narrow && qsy_tuned.tx_tone.type == TONE_DCS &&
+	      qsy_tuned.tx_tone.value == 023 && qsy_tuned.rx_tone.type == TONE_DCS);
+	c = "146.940MHz Toff";	// no tone, simplex, though the band plan has a repeater offset there
+	aprs_freq_parse(c, strlen(c), &f);
+	ui_svc_aprs_qsy(&v, &f);
+	CHECK(qsy_tuned.tx_hz == 146940000u && qsy_tuned.tx_tone.type == TONE_NONE);
+	memset(&f, 0, sizeof f);
+	CHECK(ui_svc_aprs_qsy(&v, &f) == UI_QSY_NONE);
+	c = "146.685MHz";
+	aprs_freq_parse(c, strlen(c), &f);
+	v.scan = 3;	// dual watch: refused, nothing tuned
+	qsy_tunes = 0;
+	CHECK(ui_svc_aprs_qsy(&v, &f) == UI_QSY_DUAL && qsy_tunes == 0);
+}
+#endif
+
 int main(void)
 {
 	test_defaults();
@@ -2188,7 +2354,10 @@ int main(void)
 #if CONFIG_APRS_RX
 	test_message_rejection();
 	test_msg_poll();
+	test_station_freq();
+	test_qsy();
 #endif
+	test_beacon_freq();
 	test_dmr_position();
 	test_gps_setting();
 	test_gps_status();

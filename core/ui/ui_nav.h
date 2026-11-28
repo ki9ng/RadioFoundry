@@ -147,6 +147,12 @@ void ui_focus_changed(void);
 // Open the actions for a target (SCR_ACTIONS)
 void ui_open_actions(const ui_target_t *t);
 void ui_aprs_compose(const char *call);
+// A station heard with its own position (UI_EV_APRS_HEARD): its screen pops up on Home, as the APRS Pop-up setting says
+void ui_aprs_heard(const char *call, bool direct);
+// Every UI pass: the pop-up's time and the QSY's way back
+void ui_aprs_tick(uint32_t now_ms);
+// Back on Home: undo a QSY (true: there was one)
+bool ui_aprs_qsy_back(void);
 #if CONFIG_CONTACT_EDIT
 // The contact editor on a new contact for t: its ID, type and name (a talkgroup or ID as its name when it has none)
 void ui_new_contact(const ui_target_t *t);

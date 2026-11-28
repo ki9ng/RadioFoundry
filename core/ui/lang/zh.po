@@ -840,6 +840,26 @@ msgid "Custom"
 msgstr "自定义"
 
 #: core/ui/ui_aprs.c
+msgctxt "APRS_VALUE_POPUP_ALL"
+msgid "All"
+msgstr "全部"
+
+#: core/ui/ui_aprs.c
+msgctxt "APRS_VALUE_POPUP_DIRECT"
+msgid "Heard direct"
+msgstr "直接收到"
+
+#: core/ui/ui_aprs.c
+msgctxt "APRS_HINT_NUMBER"
+msgid "{Up Down 0-9  OK keep  Back|0-9  OK keep  Back}"
+msgstr "{上 下 0-9  OK 保存  返回|0-9  OK 保存  返回}"
+
+#: core/ui/ui_aprs.c
+msgctxt "HINT_0_9_PICK_BACK"
+msgid "0-9 pick  Back"
+msgstr "0-9 选  返回"
+
+#: core/ui/ui_aprs.c
 msgctxt "APRS_WHY_NO_CALLSIGN"
 msgid "Set your callsign (the radio name) in qdmr."
 msgstr "请在 qdmr 中设置呼号（电台名）。"
@@ -950,6 +970,26 @@ msgid "Mute APRS audio"
 msgstr "APRS静音"
 
 #: core/ui/ui_aprs.c
+msgctxt "APRS_LABEL_FREQ_IN_BEACON"
+msgid "Freq in beacon"
+msgstr "信标带频率"
+
+#: core/ui/ui_aprs.c
+msgctxt "APRS_LABEL_POPUP"
+msgid "Pop-up"
+msgstr "弹出"
+
+#: core/ui/ui_aprs.c
+msgctxt "APRS_LABEL_POPUP_TIME"
+msgid "Pop-up time"
+msgstr "弹出时间"
+
+#: core/ui/ui_aprs.c
+msgctxt "APRS_LABEL_UNITS"
+msgid "Units"
+msgstr "单位"
+
+#: core/ui/ui_aprs.c
 msgctxt "APRS_LABEL_NMEA_ON_USB"
 msgid "NMEA on USB"
 msgstr "USB NMEA"
@@ -995,11 +1035,6 @@ msgid "This radio can't receive APRS"
 msgstr "本机无法接收 APRS"
 
 #: core/ui/ui_aprs.c
-msgctxt "HINT_0_9_PICK_BACK"
-msgid "0-9 pick  Back"
-msgstr "0-9 选  返回"
-
-#: core/ui/ui_aprs.c
 msgctxt "APRS_TITLE_HEARD"
 msgid "Heard"
 msgstr "收到"
@@ -1014,10 +1049,15 @@ msgctxt "APRS_EMPTY_NOTHING_HEARD"
 msgid "Nothing heard yet"
 msgstr "尚未收到"
 
-#: core/ui/ui_aprs.c core/ui/ui_menus.c
-msgctxt "WORD_MESSAGE"
-msgid "Message"
-msgstr "消息"
+#: core/ui/ui_aprs.c
+msgctxt "APRS_HINT_STATION_QSY"
+msgid "{# QSY  OK msg  Back|# QSY  OK msg}"
+msgstr "{# QSY  OK 消息  返回|# QSY  OK 消息}"
+
+#: core/ui/ui_aprs.c
+msgctxt "APRS_HINT_STATION"
+msgid "OK msg  Back"
+msgstr "OK 消息  返回"
 
 #: core/ui/ui_aprs.c
 msgctxt "APRS_BODY_STATION_GONE"
@@ -1025,44 +1065,64 @@ msgid "No longer in list"
 msgstr "已不在列表"
 
 #: core/ui/ui_aprs.c
-msgctxt "APRS_LABEL_DISTANCE"
-msgid "{Distance|Dist|}"
-msgstr "{距离|距离|}"
-
-#: core/ui/ui_aprs.c
 msgctxt "APRS_VALUE_DIRECT"
 msgid "Direct"
 msgstr "直接"
 
 #: core/ui/ui_aprs.c
-msgctxt "APRS_VALUE_VIA_DIGIPEATER"
-msgid "Via digipeater"
-msgstr "经中继"
+msgctxt "APRS_VALUE_DIGI"
+msgid "Digi"
+msgstr "中继"
 
 #: core/ui/ui_aprs.c
-msgctxt "APRS_LABEL_POSITION_AGE"
-msgid "{Position age|Pos age}"
-msgstr "{位置时间|位置时间}"
-
-#: core/ui/ui_aprs.c core/ui/ui_gps.c
-msgctxt "LABEL_SPEED"
-msgid "Speed"
-msgstr "速度"
+msgctxt "APRS_LABEL_SPD"
+msgid "Spd "
+msgstr "速度 "
 
 #: core/ui/ui_aprs.c
-msgctxt "APRS_LABEL_COURSE"
-msgid "Course"
-msgstr "移动方位"
+msgctxt "APRS_LABEL_CRS"
+msgid "Crs "
+msgstr "航向 "
 
 #: core/ui/ui_aprs.c
-msgctxt "APRS_LABEL_SYMBOL"
-msgid "Symbol"
-msgstr "标志"
+msgctxt "APRS_LABEL_ALT"
+msgid "Alt "
+msgstr "海拔 "
 
 #: core/ui/ui_aprs.c
-msgctxt "APRS_LABEL_PACKETS"
-msgid "Packets"
-msgstr "数据包"
+msgctxt "APRS_TOAST_NO_FREQUENCY"
+msgid "No frequency in its beacon"
+msgstr "其信标没有频率"
+
+#: core/ui/ui_aprs.c
+msgctxt "APRS_TOAST_QSY"
+msgid "QSY "
+msgstr "QSY "
+
+#: core/ui/ui_aprs.c
+msgctxt "APRS_TOAST_QSY_BAND"
+msgid "QSY: not a band this radio has"
+msgstr "QSY：本机无此频段"
+
+#: core/ui/ui_aprs.c
+msgctxt "APRS_TOAST_QSY_DUAL"
+msgid "QSY: turn dual watch off first"
+msgstr "QSY：请先关闭双守"
+
+#: core/ui/ui_aprs.c core/ui/ui_menus.c
+msgctxt "WORD_MESSAGE"
+msgid "Message"
+msgstr "消息"
+
+#: core/ui/ui_aprs.c
+msgctxt "APRS_TOAST_BACK_TO"
+msgid "Back to "
+msgstr "返回 "
+
+#: core/ui/ui_aprs.c
+msgctxt "APRS_TOAST_BACK_TO_CHANNEL"
+msgid "Back to the channel"
+msgstr "返回信道"
 
 #: core/ui/ui_aprs.c
 msgctxt "HINT_OK_CHOOSE_BACK"
@@ -1488,6 +1548,11 @@ msgstr "经度"
 msgctxt "GPS_LABEL_ALT"
 msgid "Alt"
 msgstr "海拔"
+
+#: core/ui/ui_gps.c
+msgctxt "LABEL_SPEED"
+msgid "Speed"
+msgstr "速度"
 
 #: core/ui/ui_gps.c
 msgctxt "GPS_EMPTY_NO_POSITIONS"

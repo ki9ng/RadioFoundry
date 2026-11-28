@@ -19,6 +19,7 @@
 #include <stddef.h>
 #include "config.h"
 #include "aprs/ax25.h"
+#include "aprs/aprs_fmt.h"
 #include "position/position.h"
 
 // Destination: our registered tocall APRDF?, the sixth character the board's (board.toml aprs_tocall, passed in by the
@@ -47,6 +48,11 @@ typedef enum {
 } aprs_path_t;
 
 typedef enum { APRS_VIA_RF, APRS_VIA_DMR, APRS_VIA_BOTH, APRS_VIA_COUNT } aprs_via_t;
+// aprs_cfg_t.popup: every station heard with a position, none, or only those heard without a digipeater
+typedef enum { APRS_POPUP_ALL, APRS_POPUP_OFF, APRS_POPUP_DIRECT, APRS_POPUP_COUNT } aprs_popup_t;
+#define APRS_POPUP_S_DEFAULT	10
+#define APRS_POPUP_S_MIN	1
+#define APRS_POPUP_S_MAX	60
 
 typedef struct {
 	bool tx_on;		// automatic beacons (manual "send now" works without)
@@ -76,6 +82,10 @@ typedef struct {
 	bool igate_tx;		// APRS-IS -> RF
 	uint8_t digi;		// aprs_digi_mode_t
 	bool mute;		// the speaker stays off on the APRS frequency in FM; decoding goes on, Monitor plays it
+	bool freq_beacon;	// our voice channel's frequency at the start of the beacon comment (aprs.org freqspec)
+	uint8_t popup;		// aprs_popup_t: a heard station's screen opens by itself on Home
+	uint8_t popup_s;	// ... for this long, APRS_POPUP_S_MIN..APRS_POPUP_S_MAX
+	bool miles;		// distances, speeds and heights in mi, mph and ft (else km, km/h and m)
 } aprs_cfg_t;	// where our position comes from and its ambiguity: the position service's settings (position.h)
 
 void aprs_cfg_default(aprs_cfg_t *c);
@@ -130,6 +140,13 @@ typedef struct {
 	uint32_t msg_serial;		// bumped on each new (non-dup) inbound message addressed to us
 	uint32_t last_msg_ms;		// hal_millis() when the newest such message arrived (0 = none yet)
 	char last_msg_from[AX25_CALL_LEN + 4];	// who sent it
+	// The last station heard with its own position (the pop-up): bumped on each, with its call and whether it came
+	// without a digipeater
+#if CONFIG_APRS_QSY
+	uint32_t pos_serial;
+	char pos_call[AX25_CALL_LEN + 4];
+	bool pos_direct;
+#endif
 #endif
 } aprs_view_t;
 
@@ -144,7 +161,11 @@ typedef struct {
 	uint16_t course, speed_kn;
 	uint8_t type;		// aprs_type_t of the last packet
 	uint16_t count;
-	char text[24];		// comment / status (truncated)
+	char text[24];		// comment / status (truncated), after any frequency fields
+#if CONFIG_APRS_QSY
+	int32_t alt_m;		// APRS_ALT_NONE = unknown
+	aprs_freq_t freq;	// the voice frequency its comment offers (freq.hz 0 = none)
+#endif
 } aprs_station_t;
 
 typedef struct {
@@ -163,6 +184,12 @@ typedef struct {
 	uint32_t rx_hz;		// on this frequency: APRS receive runs only on the APRS frequency
 	bool on_dmr;		// the channel is DMR with the call stack running (digital positions can go out)
 	uint32_t own_dmr_id;
+	// The voice channel our beacons offer (freq_beacon): side A's, FM. voice_rx_hz 0 = none (DMR, unknown). Tones as
+	// subtone_t: type tone_type_t (0 none, 1 CTCSS, 2 DCS, 3 DCS inverted), value Hz x 10 or the DCS code
+	uint32_t voice_rx_hz, voice_tx_hz;
+	uint8_t voice_rx_tone_type, voice_tx_tone_type;
+	uint16_t voice_rx_tone, voice_tx_tone;
+	bool voice_narrow;
 } aprs_radio_t;
 
 // Start-up (radio_sm_init), after the settings are loaded

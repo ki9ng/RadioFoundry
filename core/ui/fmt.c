@@ -215,22 +215,51 @@ void sb_compass(sbuf_t *b, uint16_t bearing)
 	sb_str(b, points[((bearing % 360u) * 2u + 45u) / 90u % 8u]);
 }
 
-void sb_range(sbuf_t *b, uint32_t meters, uint16_t bearing)
+void sb_dist(sbuf_t *b, uint32_t meters, bool miles)
 {
+	if (miles) {
+		uint64_t ft = ((uint64_t)meters * 3281u + 500u) / 1000u;
+		if (ft < 1000u) {
+			sb_u32(b, (uint32_t)ft, 1);
+			sb_str(b, " ft");
+			return;
+		}
+		uint32_t t = (uint32_t)(((uint64_t)meters * 10u + 804u) / 1609u);	// 0.1 mi
+		if (t < 1000u) {
+			sb_u32(b, t / 10u, 1);
+			sb_chr(b, '.');
+			sb_u32(b, t % 10u, 1);
+		} else {
+			sb_u32(b, (t + 5u) / 10u, 1);
+		}
+		sb_str(b, " mi");
+		return;
+	}
 	if (meters < 1000u) {
 		sb_u32(b, meters, 1);
-		sb_str(b, " m ");
+		sb_str(b, " m");
 	} else if (meters < 100000u) {
 		uint32_t h = (meters + 50u) / 100u;	// 0.1 km
 		sb_u32(b, h / 10u, 1);
 		sb_chr(b, '.');
 		sb_u32(b, h % 10u, 1);
-		sb_str(b, " km ");
+		sb_str(b, " km");
 	} else {
 		sb_u32(b, (meters + 500u) / 1000u, 1);
-		sb_str(b, " km ");
+		sb_str(b, " km");
 	}
+}
+
+void sb_range_u(sbuf_t *b, uint32_t meters, uint16_t bearing, bool miles)
+{
+	sb_dist(b, meters, miles);
+	sb_chr(b, ' ');
 	sb_compass(b, bearing);
+}
+
+void sb_range(sbuf_t *b, uint32_t meters, uint16_t bearing)
+{
+	sb_range_u(b, meters, bearing, false);
 }
 
 // A string's display width in cells, for truncation that never splits a character: a CJK glyph (code point > 0xFF) is

@@ -51,17 +51,41 @@ The symbol, comment and the DMR destination are set with the debug tool for now
 
 ## Station details
 
-Open **Stations heard**, select a callsign, and press **OK**. **Message** is first; press OK again to open a message
-addressed to that station. The selection stays on the same callsign when incoming packets reorder the heard list.
+Open **Stations heard** and select a callsign. Its page shows a compass, north up: you are in the middle and the
+station is the dot on the rim, in its direction (a **?** when either position is unknown). Beside it:
 
-Scroll with **Up / Down** to see distance and direction (when both positions are known), when the station was heard,
-**Direct** or **Via digipeater**, and the position's age if it differs from the last packet's age. Speed in km/h and
-course appear only when known for the retained position. The remaining rows show the symbol's table and code,
-the retained comment or status, and the packet count. The radio retains at most 23 text characters plus the end
-marker; longer comments are incomplete. No digipeater name is retained.
+- how far and which way ("14.5 km NE")
+- the voice frequency its beacon offers, if any ("146.685- T100": the repeater offset's sign and the tone)
+- **Direct** or **Digi** (heard through a digipeater) and when it was heard
+- speed, course and altitude, when known
 
-If the station leaves the heard list, the page says **No longer in list**. You can still choose Message to address
-that callsign.
+Its comment runs along the bottom; the radio keeps 23 characters of it. Turn the knob or press **Up / Down** for the
+next station. **OK** writes it a message. If the station leaves the heard list, the page says **No longer in list**;
+OK still writes to that callsign.
+
+### QSY
+
+When the station offers a frequency, the hint shows **QSY** on the context key. Press it and the radio goes to that
+frequency in the VFO, with the station's repeater offset (the band plan's when it gives none), tone and width. Press
+**Back** on the home screen to go back to the channel or frequency you were on. Once you tune somewhere else yourself,
+Back no longer goes back. QSY doesn't work during dual watch: turn it off first.
+
+### Pop-up
+
+When a station's position is heard, its page opens by itself on the home screen and closes again after the
+**Pop-up time**. Press any key other than Back and it stays open. It never opens over a menu, while you transmit or
+type a frequency, or over a message. **Pop-up** on the APRS page: **All**, **Off**, or **Heard direct** (not through
+a digipeater). **Pop-up time**: press OK, then turn the knob, press Up / Down or type the seconds (1-60), and OK.
+
+### Your frequency in the beacon
+
+With **Freq in beacon** on (the default), your beacon starts with the frequency of your channel (in dual watch,
+channel A), its tone and offset, so other radios can show it and QSY to you. It is left out when the channel is digital
+or the APRS frequency itself.
+
+### Units
+
+**Units** on the APRS page: **km** (km, km/h, m) or **mi** (mi, mph, ft).
 
 ## Path
 

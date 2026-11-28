@@ -4077,6 +4077,11 @@ void radio_req_dmr_timeslot(uint8_t ts) { req(RREQ_DMR_TS, ts); }
 void radio_req_dmr_color_code(uint8_t cc) { req(RREQ_DMR_CC, cc); }
 void radio_req_vfo_sfr(uint8_t a) { req(RREQ_VFO_SFR, a); }
 void radio_req_mode(uint8_t mode) { req(RREQ_MODE, mode); }
+void radio_req_vfo(bool on) { req(RREQ_VFO, on); }
+void radio_req_vfo_set(uint32_t hz) { req(RREQ_VFO_SET, (int32_t)hz); }
+void radio_req_vfo_tx(uint32_t hz) { req(RREQ_VFO_TX, (int32_t)hz); }
+void radio_req_bandwidth(radio_bw_t bw) { req(RREQ_BANDWIDTH, bw); }
+void radio_req_tone(uint8_t which, subtone_t t) { req(RREQ_TONE, radio_tone_arg(which, t)); }
 #if CONFIG_P25
 // As radio_task.c: the settings copied in, then the request
 void radio_req_p25_settings(const radio_p25_settings_t *s) { radio_p25_set_settings(s); req(RREQ_P25_SET, 0); }

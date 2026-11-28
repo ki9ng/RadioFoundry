@@ -46,51 +46,6 @@ static color_t sys_color(uint8_t sys)
 	return light_bg ? light[sys] : dark[sys];
 }
 
-// sin x 256 of a whole degree, from a 6 degree table
-static int isin(int deg)
-{
-	static const uint16_t q[16] = { 0, 27, 53, 79, 104, 128, 150, 171, 190, 207, 222, 234, 243, 250, 255, 256 };
-	deg %= 360;
-	if (deg < 0)
-		deg += 360;
-	int sign = deg >= 180 ? -1 : 1;
-	deg %= 180;
-	if (deg > 90)
-		deg = 180 - deg;
-	int i = deg / 6, r = deg % 6;
-	int v = q[i] + (i < 15 ? (q[i + 1] - q[i]) * r / 6 : 0);
-	return sign * v;
-}
-
-static void circle(int cx, int cy, int r, color_t c)
-{
-	int x = r, y = 0, e = 1 - r;
-	while (x >= y) {
-		gfx_pixel(cx + x, cy + y, c); gfx_pixel(cx - x, cy + y, c);
-		gfx_pixel(cx + x, cy - y, c); gfx_pixel(cx - x, cy - y, c);
-		gfx_pixel(cx + y, cy + x, c); gfx_pixel(cx - y, cy + x, c);
-		gfx_pixel(cx + y, cy - x, c); gfx_pixel(cx - y, cy - x, c);
-		y++;
-		if (e < 0) {
-			e += 2 * y + 1;
-		} else {
-			x--;
-			e += 2 * (y - x) + 1;
-		}
-	}
-}
-
-static void disc(int cx, int cy, int r, color_t c)
-{
-	int dx = r;
-	for (int dy = 0; dy <= r; dy++) {
-		while (dx * dx + dy * dy > r * r + r)
-			dx--;
-		gfx_hline(cx - dx, cy + dy, 2 * dx + 1, c);
-		gfx_hline(cx - dx, cy - dy, 2 * dx + 1, c);
-	}
-}
-
 // The Maidenhead locator to 6 characters ("FN42li")
 static void locator(char out[7], int32_t lat_e7, int32_t lon_e7)
 {
@@ -278,8 +233,8 @@ static bool sky_xy(const ui_gps_sat_t *s, int cx, int cy, int r, int *x, int *y)
 	if (s->elev == 0xFFu || s->az == 0xFFFFu)
 		return false;
 	int d = r * (90 - s->elev) / 90;
-	*x = cx + d * isin(s->az) / 256;
-	*y = cy - d * isin(s->az + 90) / 256;
+	*x = cx + d * gfx_isin(s->az) / 256;
+	*y = cy - d * gfx_isin(s->az + 90) / 256;
 	return true;
 }
 
@@ -333,8 +288,8 @@ static void draw_sky(const ui_position_t *p, int y)
 	int r = side / 2 - 1;
 	int cx = below ? w / 2 : r + 1, cy = y + r + 1;
 	const font_t *t = ui_layout.tiny;
-	circle(cx, cy, r, ui_col.line);
-	circle(cx, cy, r / 2, ui_col.line);	// 45 degrees
+	gfx_circle(cx, cy, r, ui_col.line);
+	gfx_circle(cx, cy, r / 2, ui_col.line);	// 45 degrees
 	gfx_hline(cx - r, cy, 2 * r + 1, ui_col.line);
 	gfx_vline(cx, cy - r, 2 * r + 1, ui_col.line);
 	gfx_text(t, cx + 2, cy - r, "N", ui_col.dim);
@@ -350,9 +305,9 @@ static void draw_sky(const ui_position_t *p, int y)
 			continue;
 		color_t c = s.snr == 0 ? ui_col.dim : sys_color(s.sys);
 		if (s.used)
-			disc(sx, sy, dot, c);
+			gfx_disc(sx, sy, dot, c);
 		else
-			circle(sx, sy, dot, c);
+			gfx_circle(sx, sy, dot, c);
 		if (labels && i < 32) {
 			char lb[4];
 			sat_label(lb, &s);
